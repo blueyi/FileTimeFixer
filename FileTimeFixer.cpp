@@ -83,7 +83,7 @@ std::string ParseFileNameTime(const string& filename) {
 
     // Pattern 2: Match standalone 8-digit date (e.g., 20220115)
     std::regex pattern2(R"((\d{8}))");
-    if (regex_search(filename, match, pattern2) && isValidDate(match[1])) {
+    if (!(filename.rfind("mmexport", 0) == 0) && regex_search(filename, match, pattern2) && isValidDate(match[1])) {
         return match[1].str().substr(0,4) + "-" + match[1].str().substr(4,2) + "-" + match[1].str().substr(6,2);
     }
 
@@ -92,7 +92,16 @@ std::string ParseFileNameTime(const string& filename) {
     if (regex_search(filename, match, pattern3)) {
         int64_t ts = stoll(match[1]);
         bool isMs = (match[1].length() == 13);
-        return timestampToBeijingTime(ts, isMs);
+        std::string strTime = timestampToBeijingTime(ts, isMs);
+        std::string str(strTime);
+        str.erase(std::remove(str.begin(), str.end(), '-'), str.end());
+        if (isValidDate(str.substr(0,8))) {
+            return strTime;
+        }
+        if (str.rfind("mmexport", 0) == 0) {
+            strTime = strTime.substr(strTime.rfind('.') - 13, strTime.rfind('.'));
+            return timestampToBeijingTime(stoll(strTime), isMs);
+        }
     }
 
     return "";
@@ -539,6 +548,7 @@ int JustForTest()
         "mmexportfd70cfd41603a498b9c452f818963205_1638624850479.jpg",
         "mmexport0ac3a28c487cebfacfcdbe1790585873_1652518600567.jpeg",
         "l00972450_1543624986659.jpg",
+        "mmexport1620111487858.jpg"
     };
 
     for (const auto& f : test_files) {
@@ -598,9 +608,9 @@ int main(int argc, char* argv[]) {
     }
     std::string directoryPath = argv[1];
 
-//    JustForTest();
+    JustForTest();
 //    directoryPath = "/mnt/g/Pic_test/";
 //    std::string directoryPath = "/mnt/f/Photos/Mate60Pro_20250316/";
-    TraverseDirectory(directoryPath);
+//    TraverseDirectory(directoryPath);
     return 0;
 }
