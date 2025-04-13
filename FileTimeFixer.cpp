@@ -98,7 +98,7 @@ std::string ParseFileNameTime(const string& filename) {
         if (isValidDate(str.substr(0,8))) {
             return strTime;
         }
-        if (str.rfind("mmexport", 0) == 0) {
+        if (strTime.rfind('.') - 13 >= 0 && str.rfind("mmexport", 0) == 0) {
             strTime = strTime.substr(strTime.rfind('.') - 13, strTime.rfind('.'));
             return timestampToBeijingTime(stoll(strTime), isMs);
         }
@@ -511,15 +511,16 @@ bool TraverseDirectory(const fs::path& directory) {
                     targetTime = std::min(nameTime, exifTime);
                 }
 
-                if (nameTime.substr(0, 10) == exifTime.substr(0, 10))
+                if (nameTime.length() >= 10 && exifTime.length() >= 10 && nameTime.substr(0, 10) == exifTime.substr(0, 10))
                 {
                     // if the time of exif time is "00:00:00", we need to use the name time
-                    if (exifTime.substr(11, 8) == "00:00:00")
+                    // 2018-04-28T16:00:00
+                    if (exifTime.length() >= 19 && exifTime.substr(11, 8) == "00:00:00")
                     {
                         targetTime = nameTime;
                         std::cout << "Exif time is 00:00:00: " << exifTime << std::endl;
                     }
-                    else if (nameTime.substr(11, 8) == "00:00:00")
+                    else if (nameTime.length() >= 19 && nameTime.substr(11, 8) == "00:00:00")
                     {
                         targetTime = exifTime;
                         std::cout << "Name time is 00:00:00: " << nameTime << std::endl;
