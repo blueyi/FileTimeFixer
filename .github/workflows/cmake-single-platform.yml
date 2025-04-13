@@ -20,6 +20,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Install Exiv2 dependencies
+      run: |
+         sudo apt-get update
+         sudo apt-get install -y libexiv2-dev  # install Exiv2 lib
+         
     - uses: actions/checkout@v4
 
     - name: Configure CMake
