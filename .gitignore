@@ -1,32 +1,29 @@
-# Prerequisites
-*.d
+# 编译输出目录
+/build/
+/bin/
+/lib/
+/obj/
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# CMake 生成的文件
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
 
-# Precompiled Headers
-*.gch
-*.pch
+# Visual Studio 生成的文件
+*.sln
+*.vcxproj*
+*.user
+*.filters
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
+# MacOS 生成的文件
+.DS_Store
 
-# Fortran module files
-*.mod
-*.smod
+# 临时文件
+*.swp
+*.tmp
+*.bak
+*.log
 
-# Compiled Static libraries
-*.lai
-*.la
-*.a
-*.lib
-
-# Executables
-*.exe
-*.out
-*.app
+# 忽略所有隐藏文件
+# .*
