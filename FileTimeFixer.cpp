@@ -608,9 +608,9 @@ int main(int argc, char* argv[]) {
     }
     std::string directoryPath = argv[1];
 
-    JustForTest();
+//    JustForTest();
 //    directoryPath = "/mnt/g/Pic_test/";
 //    std::string directoryPath = "/mnt/f/Photos/Mate60Pro_20250316/";
-//    TraverseDirectory(directoryPath);
+    TraverseDirectory(directoryPath);
     return 0;
 }
