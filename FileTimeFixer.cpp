@@ -320,12 +320,63 @@ std::string GetExifTimeEarliest(const std::string& filePath) {
 }
 
 std::string ExifDateTimeToUTCString(const std::string& exifDateTime) {
+    // Parse the Exif DateTime string
+    std::tm tm = {};
+    std::istringstream ss(exifDateTime);
+
+    if (exifDateTime.find('T') != std::string::npos) { // Handle time format with 'T'
+        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+        if (ss.fail()) {
+            std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
+            return "";
+        }
+    } else if (exifDateTime.find('-') != std::string::npos) {
+        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        if (ss.fail()) {
+            std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
+            return "";
+        }
+    } else if (exifDateTime.find(':') != std::string::npos) {
+        ss >> std::get_time(&tm, "%Y:%m:%d %H:%M:%S");
+        if (ss.fail()) {
+            std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
+            return "";
+        }
+    } else {
+        std::cerr << "Unsupported Exif DateTime format: " << exifDateTime << std::endl;
+        return "";
+    }
+
+    // Convert local time to time_t timestamp
+    tm.tm_isdst = -1; // Let mktime automatically determine daylight saving time
+    std::time_t localTime = std::mktime(&tm);
+    localTime += 8 * 3600; // Convert to UTC+8 time
+    if (localTime == -1) {
+        std::cerr << "Failed to convert to time_t: " << exifDateTime << std::endl;
+        return "";
+    }
+
+    // Convert time_t timestamp to UTC time
+    std::tm* utcTm = std::gmtime(&localTime);
+    if (utcTm == nullptr) {
+        std::cerr << "Failed to convert to UTC time: " << exifDateTime << std::endl;
+        return "";
+    }
+
+    // Format UTC time string
+    std::ostringstream utcSs;
+    utcSs << std::put_time(utcTm, "%Y-%m-%dT%H:%M:%S");
+    return utcSs.str();
+}
+
+/*
+std::string ExifDateTimeToUTCString(const std::string& exifDateTime) {
     // Parse Exif DateTime string
     std::tm tm = {};
     std::istringstream ss(exifDateTime);
     if (exifDateTime.find('-') != std::string::npos) {
         ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-    } 
+    }
     else if(exifDateTime.find(':') != std::string::npos) {
         ss >> std::get_time(&tm, "%Y:%m:%d %H:%M:%S");
     }
@@ -353,6 +404,8 @@ std::string ExifDateTimeToUTCString(const std::string& exifDateTime) {
     utcSs << std::put_time(utcTm, "%Y-%m-%dT%H:%M:%S");
     return utcSs.str();
 }
+    */
+
 // Determine if the file is an image format
 bool IsImageFile(const fs::path& filePath) {
     // Define common image file extensions
@@ -391,7 +444,7 @@ std::string ConvertToUTC8(const std::string& timeStr) {
     tm.tm_isdst = -1; // Let mktime automatically determine daylight saving time
     std::time_t localTime = std::mktime(&tm);
     if (localTime == -1) {
-        std::cerr << "Failed to convert to time_t: " << timeStr << std::endl; // 1970-01-01T07:59:59Z
+        std::cerr << "Failed to convert to time_t: " << timeStr << std::endl;
         return timeStr;
     }
 
