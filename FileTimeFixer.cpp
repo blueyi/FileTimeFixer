@@ -458,7 +458,21 @@ bool TraverseDirectory(const fs::path& directory) {
 
                     if (nameTime.substr(0, 10) == exifTime.substr(0, 10))
                     {
-                        targetTime = exifTime;
+                        // if the time of exif time is "00:00:00", we need to use the name time
+                        if (exifTime.substr(11, 8) == "00:00:00")
+                        {
+                            targetTime = nameTime;
+                            std::cout << "Exif time is 00:00:00: " << exifTime << std::endl;
+                        }
+                        else if(nameTime.substr(11, 8) == "00:00:00")
+                        {
+                            targetTime = exifTime;
+                            std::cout << "Name time is 00:00:00: " << nameTime << std::endl;
+                        }
+                        else
+                        {
+                            targetTime = nameTime;
+                        }
                     }
                 }
                 else if (!targetTime.empty())
