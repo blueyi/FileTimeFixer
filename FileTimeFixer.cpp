@@ -3,7 +3,11 @@
 #include <vector>
 #include <sys/stat.h>
 #include <ctime>
-#include <unistd.h>
+#ifdef _WIN32  
+#include <io.h> // Use io.h for Windows as an alternative to unistd.h  
+#else  
+#include <unistd.h>  
+#endif
 #include <cstring>
 #include <chrono>
 #include <iomanip>
@@ -15,6 +19,11 @@
 #ifdef _WIN32
 #include <time.h>
 #endif
+
+#ifndef F_OK  
+#define F_OK 0 // Define F_OK if not already defined  
+#endif
+
 
 namespace fs = std::filesystem;
 
@@ -49,7 +58,11 @@ std::string timestampToBeijingTime(int64_t timestamp, bool isMilliseconds) {
     int ms = timestamp % 1000;
 
     struct tm tm_utc;
-    gmtime_r(&seconds, &tm_utc);  // Get UTC time structure
+    #ifdef _WIN32
+        gmtime_s(&tm_utc, &seconds);  // Use gmtime_s on Windows
+    #else
+        gmtime_r(&seconds, &tm_utc);  // Use gmtime_r on other platforms
+    #endif
     tm_utc.tm_hour += 8;          // Add 8-hour offset directly
     mktime(&tm_utc);              // Normalize time (automatically handle overflow)
 
@@ -123,12 +136,20 @@ time_t UTCStringToTimestamp(const std::string& time_str) {
     if (ss.fail()) return -1;
 
     // Convert to UTC timestamp
-    return timegm(&tm); // Linux uses timegm, Windows should use _mkgmtime
+    #ifdef _WIN32
+        return _mkgmtime(&tm); // Windows-specific function
+    #else
+        return timegm(&tm); // Linux and other platforms
+    #endif
 }
 
 std::string TimestampToUTCString(time_t timestamp) {
     std::tm tm;
-    gmtime_r(&timestamp, &tm); // Windows uses gmtime_s
+    #ifdef _WIN32
+        gmtime_s(&tm, &timestamp); // Use gmtime_s on Windows
+    #else
+        gmtime_r(&timestamp, &tm); // Use gmtime_r on other platforms
+    #endif
 
     std::ostringstream ss;
     ss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
@@ -481,7 +502,7 @@ bool TraverseDirectory(const fs::path& directory) {
                 std::cout << std::endl;
             }
         }
-        int errFileCount = errorFiles.size();
+        std::size_t errFileCount = errorFiles.size();
         std::cout << "------------------------------------------" << std::endl;
         std::cout << "Total files: " << totalFileCount << ", Error files: " << errFileCount << std::endl;
         if (errFileCount > 0)
