@@ -98,7 +98,7 @@ std::string ParseFileNameTime(const string& filename) {
         if (isValidDate(str.substr(0,8))) {
             return strTime;
         }
-        if (strTime.rfind('.') - 13 >= 0 && str.rfind("mmexport", 0) == 0) {
+        if (strTime.rfind('.') != std::string::npos && strTime.rfind('.') >= 13 && str.rfind("mmexport", 0) == 0) {
             strTime = strTime.substr(strTime.rfind('.') - 13, strTime.rfind('.'));
             return timestampToBeijingTime(stoll(strTime), isMs);
         }
