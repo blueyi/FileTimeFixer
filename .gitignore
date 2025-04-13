@@ -3,6 +3,7 @@
 /bin/
 /lib/
 /obj/
+FileTimeFixer
 
 # CMake 生成的文件
 CMakeCache.txt

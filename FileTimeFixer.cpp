@@ -437,12 +437,14 @@ bool TraverseDirectory(const fs::path& directory) {
                 std::cout << " NameTime: " << nameTime << ", ExifTime: "
                           << exifTime << ", TargetTime: " << targetTime << ", TargetName: " << targetFileName << std::endl;
                 // Modify exif time
-                 // if (!ModifyExifDataForTime(filePath, targetTime)) {
-                 //     std::cerr << "Exif time modification failed." << std::endl;
-                 //     errorFiles.push_back(filePath);
-                 // }
+                if (!ModifyExifDataForTime(filePath, targetTime)) {
+                    std::cerr << "Exif time modification failed." << std::endl;
+                    errorFiles.push_back(filePath);
+                }
+
                 // TODO: modify file time
                 // ModifyFileDate(filePath, targetTime);
+
                 // Rename file with correct time
                 if (targetFileName == fileName)
                 {
@@ -456,12 +458,12 @@ bool TraverseDirectory(const fs::path& directory) {
                     errorFiles.push_back(filePath);
                     continue;
                 }
-                // if (!RenameFile(filePath, newFilePath))
-                // {
-                //     std::cerr << "Rename failed: " << filePath << std::endl;
-                //     errorFiles.push_back(filePath);
-                //     continue;
-                // }  
+                if (!RenameFile(filePath, newFilePath))
+                {
+                    std::cerr << "Rename failed: " << filePath << std::endl;
+                    errorFiles.push_back(filePath);
+                    continue;
+                }  
 
                 std::cout << std::endl;
             }
