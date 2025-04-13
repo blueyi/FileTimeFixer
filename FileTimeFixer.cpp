@@ -415,7 +415,11 @@ bool TraverseDirectory(const fs::path& directory) {
                 if (!targetTime.empty() && !exifTime.empty() && targetTime.find('-') != std::string::npos &&
                     exifTime.find('-') != std::string::npos)
                 {
-                    targetTime = targetTime < exifTime ? targetTime : exifTime;
+                    targetTime = std::min(nameTime, exifTime);
+                    if (nameTime.substr(0, 10) == exifTime.substr(0, 10))
+                    {
+                        targetTime = exifTime;
+                    }
                 }
                 else if (!targetTime.empty())
                 {
