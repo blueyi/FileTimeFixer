@@ -415,7 +415,16 @@ bool TraverseDirectory(const fs::path& directory) {
                 if (!targetTime.empty() && !exifTime.empty() && targetTime.find('-') != std::string::npos &&
                     exifTime.find('-') != std::string::npos)
                 {
-                    targetTime = std::min(nameTime, exifTime);
+                    // for some exif time too old, we need to use the name time
+                    std::string timeLimt("2010-01-01 00:00:00");
+                    if (exifTime < timeLimt) {
+                        targetTime = nameTime;
+                        std::cout << "Exif time is too old: " << exifTime << std::endl;
+                    }
+                    else {
+                        targetTime = std::min(nameTime, exifTime);
+                    }
+
                     if (nameTime.substr(0, 10) == exifTime.substr(0, 10))
                     {
                         targetTime = exifTime;
