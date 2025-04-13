@@ -373,7 +373,7 @@ std::string ConvertToUTC8(const std::string& timeStr) {
     std::tm tm = {};
     std::istringstream ss(timeStr);
     if (timeStr.find('T') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
     } else if (timeStr.find('-') != std::string::npos) {
         ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
     } else if (timeStr.find(':') != std::string::npos) {
