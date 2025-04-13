@@ -426,7 +426,7 @@ bool TraverseDirectory(const fs::path& directory) {
                 totalFileCount++;
                 std::string filePath = entry.path().string();
                 std::string fileName = entry.path().filename().string();
-                std::cout << fileName << ": ";
+                std::cout << totalFileCount << ": " << fileName << ": ";
                 std::string fileExtension = entry.path().extension().string();
                 std::string nameTime = ParseFileNameTime(fileName);
                 std::string targetTime = nameTime;
