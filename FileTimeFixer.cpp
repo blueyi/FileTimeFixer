@@ -329,7 +329,8 @@ std::string ExifDateTimeToUTCString(const std::string& exifDateTime) {
     else if(exifDateTime.find(':') != std::string::npos) {
         ss >> std::get_time(&tm, "%Y:%m:%d %H:%M:%S");
     }
-    else {
+    else if(exifDateTime.find('T') != std::string::npos){ // 2024-09-28T19:07:03Z
+        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
         return exifDateTime;
     }
     if (ss.fail()) {
