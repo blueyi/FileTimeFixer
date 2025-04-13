@@ -525,6 +525,10 @@ bool TraverseDirectory(const fs::path& directory) {
                         targetTime = exifTime;
                         std::cout << "Name time is 00:00:00: " << nameTime << std::endl;
                     }
+                    else if (nameTime.length() == 10)
+                    {
+                        targetTime = exifTime;
+                    }
                     else
                     {
                         targetTime = nameTime;
