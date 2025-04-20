@@ -3,6 +3,7 @@
 #include <vector>
 #include <sys/stat.h>
 #include <ctime>
+#include <algorithm>
 #ifdef _WIN32  
 #include <io.h> // Use io.h for Windows as an alternative to unistd.h  
 #else  
@@ -20,6 +21,10 @@
 #include <time.h>
 #endif
 
+#ifdef _WIN32
+#include <windows.h> // Include for FILETIME and related Windows API functions
+#endif
+
 #ifndef F_OK  
 #define F_OK 0 // Define F_OK if not already defined  
 #endif
@@ -32,37 +37,37 @@ using namespace std;
 // Check if an 8-digit date is valid (YYYYMMDD)
 bool isValidDate(const string& dateStr) {
     if (dateStr.length() != 8) return false;
-    int year = stoi(dateStr.substr(0,4));
-    int month = stoi(dateStr.substr(4,2));
-    int day = stoi(dateStr.substr(6,2));
+    int year = stoi(dateStr.substr(0, 4));
+    int month = stoi(dateStr.substr(4, 2));
+    int day = stoi(dateStr.substr(6, 2));
 
     if (month < 1 || month > 12) return false;
-    int daysInMonth[] = {31,28,31,30,31,30,31,31,30,31,30,31};
-    if (month == 2 && (year%400 == 0 || (year%100 !=0 && year%4 ==0))) daysInMonth[1] = 29;
-    return day >= 1 && day <= daysInMonth[month-1];
+    int daysInMonth[] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
+    if (month == 2 && (year % 400 == 0 || (year % 100 != 0 && year % 4 == 0))) daysInMonth[1] = 29;
+    return day >= 1 && day <= daysInMonth[month - 1];
 }
 
 // Check if a 6-digit time is valid (HHMMSS)
 bool isValidTime(const std::string& timeStr) {
     if (timeStr.length() != 6) return false;
-    int hour = stoi(timeStr.substr(0,2));
-    int minute = stoi(timeStr.substr(2,2));
-    int second = stoi(timeStr.substr(4,2));
-    return (hour >=0 && hour <24) && (minute >=0 && minute <60) && (second >=0 && second <60);
+    int hour = stoi(timeStr.substr(0, 2));
+    int minute = stoi(timeStr.substr(2, 2));
+    int second = stoi(timeStr.substr(4, 2));
+    return (hour >= 0 && hour < 24) && (minute >= 0 && minute < 60) && (second >= 0 && second < 60);
 }
 
-// Convert timestamp to Beijing Time (UTC+8)
+// Convert timestamp to Beijing Time (UTC+8), example: 2023-10-23 15:30:00.123
 std::string timestampToBeijingTime(int64_t timestamp, bool isMilliseconds) {
     if (!isMilliseconds) timestamp *= 1000;  // Convert seconds to milliseconds
     time_t seconds = timestamp / 1000;
     int ms = timestamp % 1000;
 
     struct tm tm_utc;
-    #ifdef _WIN32
-        gmtime_s(&tm_utc, &seconds);  // Use gmtime_s on Windows
-    #else
-        gmtime_r(&seconds, &tm_utc);  // Use gmtime_r on other platforms
-    #endif
+#ifdef _WIN32
+    gmtime_s(&tm_utc, &seconds);  // Use gmtime_s on Windows
+#else
+    gmtime_r(&seconds, &tm_utc);  // Use gmtime_r on other platforms
+#endif
     tm_utc.tm_hour += 8;          // Add 8-hour offset directly
     mktime(&tm_utc);              // Normalize time (automatically handle overflow)
 
@@ -77,14 +82,14 @@ std::string ParseFileNameTime(const string& filename) {
     // Pattern 1: Match 8-digit date and 6-digit time (e.g., 20231111_193849)
     std::regex pattern1(R"((\d{8})[_-](\d{6}))");
     if (regex_search(filename, match, pattern1) && isValidDate(match[1]) && isValidTime(match[2])) {
-        return match[1].str().substr(0,4) + "-" + match[1].str().substr(4,2) + "-" + match[1].str().substr(6,2) 
-               + " " + match[2].str().substr(0,2) + ":" + match[2].str().substr(2,2) + ":" + match[2].str().substr(4,2);
+        return match[1].str().substr(0, 4) + "-" + match[1].str().substr(4, 2) + "-" + match[1].str().substr(6, 2)
+            + " " + match[2].str().substr(0, 2) + ":" + match[2].str().substr(2, 2) + ":" + match[2].str().substr(4, 2);
     }
 
     // Pattern 2: Match standalone 8-digit date (e.g., 20220115)
     std::regex pattern2(R"((\d{8}))");
     if (!(filename.rfind("mmexport", 0) == 0) && regex_search(filename, match, pattern2) && isValidDate(match[1])) {
-        return match[1].str().substr(0,4) + "-" + match[1].str().substr(4,2) + "-" + match[1].str().substr(6,2);
+        return match[1].str().substr(0, 4) + "-" + match[1].str().substr(4, 2) + "-" + match[1].str().substr(6, 2);
     }
 
     // Pattern 3: Match 13-digit or 10-digit timestamp (e.g., 1568301595980)
@@ -95,7 +100,7 @@ std::string ParseFileNameTime(const string& filename) {
         std::string strTime = timestampToBeijingTime(ts, isMs);
         std::string str(strTime);
         str.erase(std::remove(str.begin(), str.end(), '-'), str.end());
-        if (isValidDate(str.substr(0,8))) {
+        if (isValidDate(str.substr(0, 8))) {
             return strTime;
         }
         if (strTime.rfind('.') != std::string::npos && strTime.rfind('.') >= 13 && str.rfind("mmexport", 0) == 0) {
@@ -103,7 +108,7 @@ std::string ParseFileNameTime(const string& filename) {
             return timestampToBeijingTime(stoll(strTime), isMs);
         }
     }
-
+    std::cerr << "Unable to parse time from file name: " << filename << std::endl;
     return "";
 }
 
@@ -112,8 +117,8 @@ void PrintPosixFileTimes(std::string& filename) {
     if (stat(filename.c_str(), &fileStat) != 0) return;
 
     std::cout << "Last access time: " << ctime(&fileStat.st_atime)
-              << "Last modification time: " << ctime(&fileStat.st_mtime)
-              << "Metadata modification time: " << ctime(&fileStat.st_ctime);
+        << "Last modification time: " << ctime(&fileStat.st_mtime)
+        << "Metadata modification time: " << ctime(&fileStat.st_ctime);
 }
 
 bool RenameFile(std::string oldName, std::string newName) {
@@ -127,58 +132,118 @@ bool RenameFile(std::string oldName, std::string newName) {
         std::cerr << "New name is the same as old name!" << std::endl;
         return false;
     }
-    
+
     if (rename(oldName.c_str(), newName.c_str()) == 0) {
         std::cout << "Rename success: " << oldName << " -> " << newName << std::endl;
         return true;
-    } 
+    }
 
     return false;
 }
 
-// Example string format: "2023-10-23T15:30:00Z" (ISO 8601)
-time_t UTCStringToTimestamp(const std::string& time_str) {
-    std::tm tm = {};
-    std::istringstream ss(time_str);
-    // Parse ISO 8601 format
-    ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-    if (ss.fail()) return -1;
+// parse UTC time string to tm structure
+// Example string formats: "2023-10-23T15:30:00Z", "2023-10-23 15:30:00", "2023:10:23 15:30:00"
+bool ParseUTCStringTotm(std::tm& tm, const std::string& utcTimeStr) {
+    std::istringstream ss(utcTimeStr);
 
-    // Convert to UTC timestamp
-    #ifdef _WIN32
-        return _mkgmtime(&tm); // Windows-specific function
-    #else
-        return timegm(&tm); // Linux and other platforms
-    #endif
+    if (utcTimeStr.empty()) {
+        std::cerr << "Empty UTC time string" << std::endl;
+        return false;
+    }
+    
+
+    if (utcTimeStr.find('T') != std::string::npos && utcTimeStr.find('-') != std::string::npos) { // Handle time format with 'T'
+        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
+        if (!ss.fail()) {
+            return true;
+        }
+    }
+    else if (utcTimeStr.find('-') != std::string::npos) {
+        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
+        if (!ss.fail()) {
+            return true;
+        }
+    }
+    else if (utcTimeStr.find(':') != std::string::npos) {
+        ss >> std::get_time(&tm, "%Y:%m:%d %H:%M:%S");
+        if (!ss.fail()) {
+            return true;
+        }
+    }
+
+    std::cerr << "Failed to parse UTC time string: " << utcTimeStr << std::endl;
+    return false;
 }
 
+// Example string format: "2023-10-23T15:30:00Z" (ISO 8601)
+time_t UTCStringToTimestamp(const std::string& timStr) {
+    std::tm tm = {};
+    if (ParseUTCStringTotm(tm, timStr)) return -1;
+
+    // Convert to UTC timestamp
+#ifdef _WIN32
+    return _mkgmtime(&tm); // Windows-specific function
+#else
+    return timegm(&tm); // Linux and other platforms
+#endif
+}
+
+// Convert time_t timestamp to UTC string, example: "2023-10-23T15:30:00"
 std::string TimestampToUTCString(time_t timestamp) {
     std::tm tm;
-    #ifdef _WIN32
-        gmtime_s(&tm, &timestamp); // Use gmtime_s on Windows
-    #else
-        gmtime_r(&timestamp, &tm); // Use gmtime_r on other platforms
-    #endif
+#ifdef _WIN32
+    gmtime_s(&tm, &timestamp); // Use gmtime_s on Windows
+#else
+    gmtime_r(&timestamp, &tm); // Use gmtime_r on other platforms
+#endif
 
     std::ostringstream ss;
     ss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%S");
     return ss.str();
 }
 
-void ModifyFileCreationDate(const fs::path& filepath, const std::string& timeStr) {
+// Modify file creation date for windows, last write time for linux and windows
+bool ModifyFileCreationDate(const fs::path& filepath, const std::string& timeStr) {
     // Parse the time string into a tm structure
     std::tm tm = {};
-    std::istringstream ss(timeStr);
-    ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-    if (ss.fail()) {
-        throw std::runtime_error("Time format error");
+    if (!ParseUTCStringTotm(tm, timeStr)) {
+        std::cerr << "Failed to parse time string: " << timeStr << std::endl;
+        return false;
     }
+
     tm.tm_isdst = 0;  // Disable daylight saving time
 
     // Convert to UTC timestamp (cross-platform handling)
     time_t timestamp;
 #if defined(_WIN32)
     timestamp = _mkgmtime(&tm);  // Windows-specific UTC conversion
+
+    // time_t to FILETIME
+    FILETIME ftCreate, ftAccess, ftWrite;
+    {
+        LONGLONG ll = Int32x32To64(timestamp, 10000000) + 116444736000000000;
+        ftCreate.dwLowDateTime = (DWORD)ll;
+        ftCreate.dwHighDateTime = ll >> 32;
+        ftAccess = ftWrite = ftCreate;  // Set all times to the same value
+    }
+
+    // Open the file and set the creation time with WIN32 API
+    HANDLE hFile = CreateFileW(filepath.c_str(), FILE_WRITE_ATTRIBUTES,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) {
+        std::cerr << "Windows CreateFile failed: " << GetLastError() << std::endl;
+        return false;
+    }
+
+    BOOL result = SetFileTime(hFile, &ftCreate, &ftAccess, &ftWrite);
+    CloseHandle(hFile);
+
+    if (!result) {
+        std::cerr << "SetFileTime failed: " << GetLastError() << std::endl;
+        return false;
+    }
+
 #else
     // Temporarily set the timezone to UTC on Linux/macOS
     char* tz = std::getenv("TZ");
@@ -187,7 +252,8 @@ void ModifyFileCreationDate(const fs::path& filepath, const std::string& timeStr
     timestamp = std::mktime(&tm);
     if (tz) {
         setenv("TZ", tz, 1);
-    } else {
+    }
+    else {
         unsetenv("TZ");
     }
     tzset();
@@ -212,9 +278,10 @@ void ModifyFileCreationDate(const fs::path& filepath, const std::string& timeStr
     fs::file_time_type file_time(file_duration);
     // Modify the file creation time
     fs::last_write_time(filepath, file_time);
+    return true;
 }
 
-bool GetExifData( const std::string& filepath, Exiv2::ExifData& exifData) {
+bool GetExifData(const std::string& filepath, Exiv2::ExifData& exifData) {
     try {
         // 1. Open the image file
         auto image = Exiv2::ImageFactory::open(filepath);
@@ -226,18 +293,20 @@ bool GetExifData( const std::string& filepath, Exiv2::ExifData& exifData) {
         // 2. Read metadata
         try {
             image->readMetadata();
-        } catch (const Exiv2::Error& e) {
+        }
+        catch (const Exiv2::Error& e) {
             std::cerr << "Error: " << e.what() << std::endl;
         }
         exifData = image->exifData();
         return true;
-    } catch (const Exiv2::Error& e) {
+    }
+    catch (const Exiv2::Error& e) {
         std::cerr << "Exiv2 error: " << e.what() << std::endl;
         return false;
     }
 }
 
-bool ModifyExifDataForTime( const std::string& filepath, const std::string& new_datetime) {
+bool ModifyExifDataForTime(const std::string& filepath, const std::string& new_datetime) {
     try {
         // 1. Open the image file
         auto image = Exiv2::ImageFactory::open(filepath);
@@ -260,19 +329,21 @@ bool ModifyExifDataForTime( const std::string& filepath, const std::string& new_
             Exiv2::ExifKey key(tag);
             auto pos = exifData.findKey(key);
             if (pos != exifData.end()) {
-            pos->setValue(new_datetime);
-            } else {
-            // Add new tag if it does not exist
-            auto value = Exiv2::Value::create(Exiv2::asciiString);
-            value->read(new_datetime);
-            exifData.add(key, value.get());
+                pos->setValue(new_datetime);
+            }
+            else {
+                // Add new tag if it does not exist
+                auto value = Exiv2::Value::create(Exiv2::asciiString);
+                value->read(new_datetime);
+                exifData.add(key, value.get());
             }
         }
         // 4. Write back metadata
         image->writeMetadata();
         return true;
 
-    } catch (const Exiv2::Error& e) {
+    }
+    catch (const Exiv2::Error& e) {
         std::cerr << "Exiv2 Error: " << e.what() << std::endl;
         return false;
     }
@@ -310,7 +381,7 @@ std::string GetExifTimeEarliest(const std::string& filePath) {
         auto pos = exifData.findKey(key);
         if (pos != exifData.end()) {
             std::string timeStr = pos->toString();
-//            std::cout << "***" << tag << ": " << timeStr << std::endl;
+            //            std::cout << "***" << tag << ": " << timeStr << std::endl;
             if (earliestTime.empty() || timeStr < earliestTime) {
                 earliestTime = timeStr;
             }
@@ -319,34 +390,15 @@ std::string GetExifTimeEarliest(const std::string& filePath) {
     return earliestTime;
 }
 
+
+// Convert Exif DateTime string to UTC time string, example: "2023-10-23T15:30:00"
 std::string ExifDateTimeToUTCString(const std::string& exifDateTime) {
     // Parse the Exif DateTime string
     std::tm tm = {};
-    std::istringstream ss(exifDateTime);
-
-    if (exifDateTime.find('T') != std::string::npos) { // Handle time format with 'T'
-        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-        if (ss.fail()) {
-            std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
-            return "";
-        }
-    } else if (exifDateTime.find('-') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-        if (ss.fail()) {
-            std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
-            return "";
-        }
-    } else if (exifDateTime.find(':') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y:%m:%d %H:%M:%S");
-        if (ss.fail()) {
-            std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
-            return "";
-        }
-    } else {
-        std::cerr << "Unsupported Exif DateTime format: " << exifDateTime << std::endl;
+    if (!ParseUTCStringTotm(tm, exifDateTime)) {
+        std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
         return "";
     }
-
     // Convert local time to time_t timestamp
     tm.tm_isdst = -1; // Let mktime automatically determine daylight saving time
     std::time_t localTime = std::mktime(&tm);
@@ -369,44 +421,8 @@ std::string ExifDateTimeToUTCString(const std::string& exifDateTime) {
     return utcSs.str();
 }
 
-/*
-std::string ExifDateTimeToUTCString(const std::string& exifDateTime) {
-    // Parse Exif DateTime string
-    std::tm tm = {};
-    std::istringstream ss(exifDateTime);
-    if (exifDateTime.find('-') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-    }
-    else if(exifDateTime.find(':') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y:%m:%d %H:%M:%S");
-    }
-    else if(exifDateTime.find('T') != std::string::npos){ // 2024-09-28T19:07:03Z
-        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-        return exifDateTime;
-    }
-    if (ss.fail()) {
-        std::cerr << "Failed to parse Exif DateTime: " << exifDateTime << std::endl;
-    }
 
-    // Convert local time to time_t timestamp
-    tm.tm_isdst = -1; // Let mktime automatically determine daylight saving time
-    std::time_t localTime = std::mktime(&tm);
-    localTime += 8 * 3600; // Convert to UTC+8 time
-
-    // Convert time_t timestamp to UTC time
-    std::tm* utcTm = std::gmtime(&localTime);
-    if (utcTm == nullptr) {
-        std::cerr << "Failed to convert to UTC time: " << exifDateTime << std::endl;
-    }
-
-    // Format UTC time string
-    std::ostringstream utcSs;
-    utcSs << std::put_time(utcTm, "%Y-%m-%dT%H:%M:%S");
-    return utcSs.str();
-}
-    */
-
-// Determine if the file is an image format
+    // Determine if the file is an image format
 bool IsImageFile(const fs::path& filePath) {
     // Define common image file extensions
     const std::vector<std::string> imageExtensions = {
@@ -421,23 +437,13 @@ bool IsImageFile(const fs::path& filePath) {
     return std::find(imageExtensions.begin(), imageExtensions.end(), extension) != imageExtensions.end();
 }
 
-std::string ConvertToUTC8(const std::string& timeStr) {
+// format the time string to YYYYMMDD_HHMMSS used as part of file name
+std::string FormatTimeToUTC8Name(const std::string& timeStr) {
     // Parse the time string
     std::tm tm = {};
-    std::istringstream ss(timeStr);
-    if (timeStr.find('T') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
-    } else if (timeStr.find('-') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y-%m-%d %H:%M:%S");
-    } else if (timeStr.find(':') != std::string::npos) {
-        ss >> std::get_time(&tm, "%Y:%m:%d %H:%M:%S");
-    } else {
-        std::cerr << "Unsupported time format: " << timeStr << std::endl;
-        return timeStr;
-    }
-    if (ss.fail()) {
+    if (!ParseUTCStringTotm(tm, timeStr)) {
         std::cerr << "Failed to parse time string: " << timeStr << std::endl;
-        return timeStr;
+        return "";
     }
 
     // Convert local time to time_t timestamp
@@ -445,7 +451,7 @@ std::string ConvertToUTC8(const std::string& timeStr) {
     std::time_t localTime = std::mktime(&tm);
     if (localTime == -1) {
         std::cerr << "Failed to convert to time_t: " << timeStr << std::endl;
-        return timeStr;
+        return "";
     }
 
     // Convert time_t timestamp to UTC+8 time
@@ -453,12 +459,21 @@ std::string ConvertToUTC8(const std::string& timeStr) {
     std::tm* utcPlus8Tm = std::gmtime(&localTime);
     if (utcPlus8Tm == nullptr) {
         std::cerr << "Failed to convert to UTC+8 time: " << timeStr << std::endl;
-        return timeStr;
+        return "";
     }
 
     // Format UTC+8 time string
     std::ostringstream utcPlus8Ss;
+    stringstream ss;
     utcPlus8Ss << std::put_time(utcPlus8Tm, "%Y%m%d_%H%M%S");
+
+    // example: "2018-09-08 00:46:26.883"
+    if (timeStr.length() >= 23) {
+        // Extract milliseconds from the original time string
+        std::string msStr = timeStr.substr(20, 3);
+        int ms = std::stoi(msStr);
+        utcPlus8Ss << "_" << std::setw(3) << std::setfill('0') << ms;
+    }
     return utcPlus8Ss.str();
 }
 
@@ -473,67 +488,68 @@ bool TraverseDirectory(const fs::path& directory) {
         int totalFileCount = 0;
         std::vector<std::string> errorFiles;
 
-        for (const auto &entry : fs::recursive_directory_iterator(directory))
+        for (const auto& entry : fs::recursive_directory_iterator(directory))
         {
             if (entry.is_directory())
             {
-            std::cout << "---- Directory: " << entry.path() << " ----" << std::endl;
+                std::cout << "---- Directory: " << entry.path() << " ----" << std::endl;
             }
             if (fs::is_regular_file(entry.status()))
             {
-            if (!IsImageFile(entry.path()))
-            {
-                std::cout << "Non-image file: " << entry.path() << std::endl;
-                continue;
-            }
-            totalFileCount++;
-            std::string filePath = entry.path().string();
-            std::string fileName = entry.path().filename().string();
-            std::cout << totalFileCount << ": " << fileName << ": ";
-            std::string fileExtension = entry.path().extension().string();
-            std::string nameTime = ParseFileNameTime(fileName);
-            std::string targetTime = nameTime;
-            std::string exifTime = GetExifTimeEarliest(filePath);
-            exifTime = ExifDateTimeToUTCString(exifTime);
-
-            if (!targetTime.empty() && !exifTime.empty() && targetTime.find('-') != std::string::npos &&
-                exifTime.find('-') != std::string::npos)
-            {
-                // for some exif time too old, we need to use the name time
-                std::string timeLimt("2010-01-01 00:00:00");
-                if (exifTime < timeLimt)
+                totalFileCount++;
+                if (!IsImageFile(entry.path()))
                 {
-                    targetTime = nameTime;
-                    std::cout << "Exif time is too old: " << exifTime << std::endl;
+                    std::cout << "Non-image file: " << entry.path() << std::endl;
+                    continue;
                 }
-                else
+                std::string filePath = entry.path().string();
+                std::string fileName = entry.path().filename().string();
+                std::cout << totalFileCount << ": " << fileName << ": ";
+                std::string fileExtension = entry.path().extension().string();
+                std::string nameTime = ParseFileNameTime(fileName);
+                std::string targetTime = nameTime;
+                std::string exifTime = GetExifTimeEarliest(filePath);
+                exifTime = ExifDateTimeToUTCString(exifTime);
+                if (exifTime.empty() && nameTime.empty())
                 {
-                    targetTime = std::min(nameTime, exifTime);
+                    std::cerr << "[Ignore]Unable to parse time: " << fileName << std::endl;
+                    errorFiles.push_back(filePath);
+                    continue;
                 }
 
-                if (nameTime.length() >= 10 && exifTime.length() >= 10 && nameTime.substr(0, 10) == exifTime.substr(0, 10))
+                if (!targetTime.empty() && !exifTime.empty() && targetTime.find('-') != std::string::npos &&
+                    exifTime.find('-') != std::string::npos)
                 {
-                    // if the time of exif time is "00:00:00", we need to use the name time
-                    // 2018-04-28T16:00:00
-                    if (exifTime.length() >= 19 && exifTime.substr(11, 8) == "00:00:00")
+                    // for some exif time too old, we need to use the name time
+                    std::string timeLimt("2010-01-01 00:00:00");
+                    if (exifTime < timeLimt)
                     {
                         targetTime = nameTime;
-                        std::cout << "Exif time is 00:00:00: " << exifTime << std::endl;
-                    }
-                    else if (nameTime.length() >= 19 && nameTime.substr(11, 8) == "00:00:00")
-                    {
-                        targetTime = exifTime;
-                        std::cout << "Name time is 00:00:00: " << nameTime << std::endl;
-                    }
-                    else if (nameTime.length() == 10)
-                    {
-                        targetTime = exifTime;
+                        std::cout << "Exif time is too old: " << exifTime << std::endl;
                     }
                     else
                     {
-                        targetTime = nameTime;
+                        targetTime = std::min<std::string>(nameTime, exifTime);
                     }
-                }
+
+                    if (nameTime.length() >= 10 && exifTime.length() >= 10 && nameTime.substr(0, 10) == exifTime.substr(0, 10))
+                    {
+                        // if the time of exif time is "00:00:00", we need to use the name time
+                        if (exifTime.length() >= 19 && exifTime.substr(11, 8) == "00:00:00")
+                        {
+                            targetTime = nameTime;
+                            std::cout << "Exif time is 00:00:00: " << exifTime << std::endl;
+                        }
+                        else if (nameTime.length() >= 19 && nameTime.substr(11, 8) == "00:00:00")
+                        {
+                            targetTime = exifTime;
+                            std::cout << "Name time is 00:00:00: " << nameTime << std::endl;
+                        }
+                        else
+                        {
+                            targetTime = nameTime.length() > exifTime.length() ? nameTime : exifTime;
+                        }
+                    }
                 }
                 else if (!targetTime.empty())
                 {
@@ -545,28 +561,40 @@ bool TraverseDirectory(const fs::path& directory) {
                 }
                 else
                 {
-                    std::cerr << "Unable to parse time: " << fileName << std::endl;
+                    std::cerr << "[Ignore]Unable to parse time: " << fileName << std::endl;
                     errorFiles.push_back(filePath);
                     continue;
                 }
+
                 // format the time string to YYYYMMDD_HHMMSS used as part of file name
-                std::string formattedTime = ConvertToUTC8(targetTime);
-                std::string targetFileName = "IMG_" + formattedTime + fileExtension;
+                std::string formattedTimeStr = FormatTimeToUTC8Name(targetTime);
+                if (formattedTimeStr.empty())
+                {
+                    std::cerr << "[Ignore]Failed to format time to UTC8 Str: " << targetTime << std::endl;
+                    errorFiles.push_back(filePath);
+                    continue;
+                }
+
+                std::string targetFileName = "IMG_" + formattedTimeStr + fileExtension;
                 std::cout << " NameTime: " << nameTime << ", ExifTime: "
-                          << exifTime << ", TargetTime: " << targetTime << ", TargetName: " << targetFileName << std::endl;
+                    << exifTime << ", TargetTime: " << targetTime << ", TargetName: " << targetFileName << std::endl;
                 // Modify exif time
                 if (!ModifyExifDataForTime(filePath, targetTime)) {
-                    std::cerr << "Exif time modification failed." << std::endl;
+                    std::cerr << "Exif time modification failed: " << filePath << std::endl;
                     errorFiles.push_back(filePath);
                 }
 
-                // TODO: modify file time
-                // ModifyFileDate(filePath, targetTime);
+                // modify file time
+                if (!ModifyFileCreationDate(filePath, targetTime)) {
+                    std::cerr << "File time modification failed: " << filePath << std::endl;
+                    errorFiles.push_back(filePath);
+                }
 
                 // Rename file with correct time
                 if (targetFileName == fileName)
                 {
                     // File name is already correct
+                    std::cout << "File name is already correct: " << filePath << std::endl;
                     continue;
                 }
                 std::string newFilePath = entry.path().parent_path().string() + "/" + targetFileName;
@@ -581,7 +609,7 @@ bool TraverseDirectory(const fs::path& directory) {
                     std::cerr << "Rename failed: " << filePath << std::endl;
                     errorFiles.push_back(filePath);
                     continue;
-                }  
+                }
 
                 std::cout << std::endl;
             }
@@ -592,12 +620,15 @@ bool TraverseDirectory(const fs::path& directory) {
         if (errFileCount > 0)
         {
             std::cout << "Error file list: " << std::endl;
-            for (const auto &errFile : errorFiles)
+            for (const auto& errFile : errorFiles)
             {
                 std::cout << errFile << std::endl;
             }
         }
-    } catch (const fs::filesystem_error& e) {
+        std::cout << "------------------------------------------" << std::endl;
+        std::cout << "Total files: " << totalFileCount << ", Error files: " << errFileCount << std::endl;
+    }
+    catch (const fs::filesystem_error& e) {
         std::cerr << "Filesystem error: " << e.what() << std::endl;
     }
     return true;
@@ -627,45 +658,47 @@ int JustForTest()
     };
 
     for (const auto& f : test_files) {
-        cout << setw(45) << left << f 
-             << " => " << ParseFileNameTime(f) << endl;
+        cout << setw(45) << left << f
+            << " => " << ParseFileNameTime(f) << endl;
     }
 
-    std::string fileName = "20250112_075135000_iOS.jpg";
-    std::string folderPath = "/mnt/g/Pic_test/1/";
-    std::string testFileNameOri = folderPath + "20250112_075135000_iOS_ORI.jpg";
+    std::string fileName = "IMG_20180428_160000.jpg";
+    // std::string folderPath = "/mnt/g/Pic_test/1/";
+    std::string folderPath = "g:/Pic_test/1/";
+    std::string testFileNameOri = folderPath + "IMG_20180428_160000_ori.jpg";
     std::string testFileNameNew = folderPath + fileName;
     std::cout << "----------------------------------" << std::endl;
-//    std::cout << RenameFile(testFileNameOri, testFileNameNew) << std::endl;
+    //    std::cout << RenameFile(testFileNameOri, testFileNameNew) << std::endl;
 
     std::string timeStr = ParseFileNameTime(fileName);
-    timeStr = "2026-09-07 07:51:35.123";
+    timeStr = "2006-09-07 07:51:35.123";
     std::cout << "Parsed time: " << timeStr << std::endl;
     PrintPosixFileTimes(testFileNameOri);
-// Example usage: Set the time to 2023-10-01 12:30:45
+    // Example usage: Set the time to 2023-10-01 12:30:45
     PrintExifTime(testFileNameOri);
     if (ModifyExifDataForTime(testFileNameNew, timeStr))
     {
         std::cout << "Capture time modified successfully" << std::endl;
-    } else {
+    }
+    else {
         std::cout << "Modification failed" << std::endl;
     }
-    
+
     ModifyFileCreationDate(testFileNameNew, timeStr);
     std::cout << "------------------------------------------" << std::endl;
     PrintPosixFileTimes(testFileNameNew);
     PrintExifTime(testFileNameNew);
 
-    std::cout <<  ExifDateTimeToUTCString(GetExifTimeEarliest(testFileNameOri)) << std::endl;
+    std::cout << ExifDateTimeToUTCString(GetExifTimeEarliest(testFileNameOri)) << std::endl;
 
     return 0;
 
-//    std::time_t timestamp = 1600217726; // Example timestamp (2023-01-01T00:00:00Z)
-//    std::string utcString = TimestampToUTCString(timestamp);
-//    std::cout << "UTC time string: " << utcString << std::endl;
+    //    std::time_t timestamp = 1600217726; // Example timestamp (2023-01-01T00:00:00Z)
+    //    std::string utcString = TimestampToUTCString(timestamp);
+    //    std::cout << "UTC time string: " << utcString << std::endl;
 
     std::string utcString = "2023-01-02";
-//    std::string utcString = "2023-01-02T08:00:00Z";
+    //    std::string utcString = "2023-01-02T08:00:00Z";
     std::cout << "UTC time string: " << utcString << std::endl;
     std::time_t timestamp = UTCStringToTimestamp(utcString);
     std::cout << "Timestamp: " << timestamp << std::endl;
@@ -683,9 +716,10 @@ int main(int argc, char* argv[]) {
     }
     std::string directoryPath = argv[1];
 
-//    JustForTest();
-//    directoryPath = "/mnt/g/Pic_test/";
-//    std::string directoryPath = "/mnt/f/Photos/Mate60Pro_20250316/";
+    //    JustForTest();
+    //    directoryPath = "/mnt/g/Pic_test/";
+    //    std::string directoryPath = "/mnt/f/Photos/Mate60Pro_20250316/";
+
     TraverseDirectory(directoryPath);
     return 0;
 }
