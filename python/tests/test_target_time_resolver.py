@@ -23,6 +23,8 @@ from filetimefixer.target_time_resolver import (
         ("2023-10-23 00:00:00", "2023-10-23T14:30:00", "2023-10-23T14:30:00", TargetTimeScenario.SameDayNameMidnightUseExif),
         ("2023-10-23 14:30:00", "2023-10-23T14:30:00", "2023-10-23T14:30:00", TargetTimeScenario.SameDayBothFullUseMorePrecise),
         ("2023-10-23 14:30:01", "2023-10-23T14:30:00", "2023-10-23 14:30:01", TargetTimeScenario.SameDayBothFullUseMorePrecise),
+        ("2024-11-12", "2024-11-12T15:18:32", "2024-11-12T15:18:32", TargetTimeScenario.SameDayNameDateOnlyUseExif),
+        ("2024-11-12 10:00:00", "2024-11-12", "2024-11-12 10:00:00", TargetTimeScenario.SameDayExifDateOnlyUseName),
     ],
 )
 def test_resolve_target_time(
@@ -52,6 +54,8 @@ def test_resolve_target_time(
         (TargetTimeScenario.SameDayExifMidnightUseName, "SameDayExifMidnightUseName"),
         (TargetTimeScenario.SameDayNameMidnightUseExif, "SameDayNameMidnightUseExif"),
         (TargetTimeScenario.SameDayBothFullUseMorePrecise, "SameDayBothFullUseMorePrecise"),
+        (TargetTimeScenario.SameDayNameDateOnlyUseExif, "SameDayNameDateOnlyUseExif"),
+        (TargetTimeScenario.SameDayExifDateOnlyUseName, "SameDayExifDateOnlyUseName"),
     ],
 )
 def test_scenario_name(scenario: TargetTimeScenario, expected_name: str) -> None:

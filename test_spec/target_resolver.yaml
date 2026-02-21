@@ -43,3 +43,13 @@ cases:
     exif_time: "2023-10-23T14:30:00"
     expected_target: "2023-10-23 14:30:01"
     expected_scenario: "SameDayBothFullUseMorePrecise"
+  # Name date-only, Exif has time -> use Exif
+  - name_time: "2024-11-12"
+    exif_time: "2024-11-12T15:18:32"
+    expected_target: "2024-11-12T15:18:32"
+    expected_scenario: "SameDayNameDateOnlyUseExif"
+  # Exif date-only, Name has time -> use Name
+  - name_time: "2024-11-12 10:00:00"
+    exif_time: "2024-11-12"
+    expected_target: "2024-11-12 10:00:00"
+    expected_scenario: "SameDayExifDateOnlyUseName"

@@ -1,4 +1,4 @@
-# Run Python test suite on push/PR (and optionally on schedule).
+# Python test suite: unit tests + spec parity with C++ (test_spec/*.yaml).
 name: Python tests
 
 on:
@@ -17,9 +17,10 @@ on:
 
 jobs:
   test:
-    name: Test
+    name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         python-version: ['3.9', '3.10', '3.11', '3.12']
 
@@ -36,7 +37,7 @@ jobs:
           python -m pip install --upgrade pip
           cd python && pip install -e ".[dev]"
 
-      - name: Run tests
+      - name: Run tests (unit + spec parity from test_spec/*.yaml)
         run: |
           cd python && pytest tests/ -v --tb=short
 
@@ -48,6 +49,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: cd python && pip install -e ".[dev]"
-      - run: cd python && python -m py_compile filetimefixer/*.py 2>/dev/null || true
-      - run: cd python && pytest tests/ -v --tb=short -q
+      - name: Install and compile-check
+        run: |
+          cd python && pip install -e ".[dev]"
+          python -m py_compile filetimefixer/*.py 2>/dev/null || true
+      - name: Quick test run
+        run: cd python && pytest tests/ -v --tb=short -q

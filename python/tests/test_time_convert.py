@@ -5,6 +5,7 @@ import pytest
 from filetimefixer.time_convert import (
     format_time_to_utc8_name,
     exif_datetime_to_utc_string,
+    supplement_date_with_current_utc_time,
     utc_string_to_timestamp,
 )
 
@@ -52,3 +53,12 @@ def test_utc_string_to_timestamp() -> None:
     assert ts > 0
     assert utc_string_to_timestamp("") == -1
     assert utc_string_to_timestamp("not-a-date") == -1
+
+
+def test_supplement_date_with_current_utc_time() -> None:
+    assert supplement_date_with_current_utc_time("") == ""
+    assert supplement_date_with_current_utc_time("2023-10-23T14:00:00") == "2023-10-23T14:00:00"
+    got = supplement_date_with_current_utc_time("2024-11-12")
+    assert got.startswith("2024-11-12T")
+    assert len(got) == 19
+    assert got[11:13].isdigit() and got[14:16].isdigit() and got[17:19].isdigit()

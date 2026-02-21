@@ -16,6 +16,12 @@ cases:
     expected: "2023-06-23 19:06:38"
   - filename: "MEITU_20240807_123043882.jpg"
     expected: "2024-08-07 12:30:43"
+  # ptYYYY_MM_DD_HH_MM_SS
+  - filename: "pt2021_10_23_21_52_39.jpg"
+    expected: "2021-10-23 21:52:39"
+  # Screenshot_YYYY-MM-DD-HH-MM-SS
+  - filename: "Screenshot_2021-03-25-01-12-43-235_com.tencent.mm.jpg"
+    expected: "2021-03-25 01:12:43"
   # 纯8位日期（非 mmexport）
   - filename: "20220115-wczt.jpg"
     expected: "2022-01-15"
