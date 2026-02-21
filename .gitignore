@@ -1,30 +1,65 @@
-# 编译输出目录
+.cursor/
+# Build output directories
 /build/
 /bin/
 /lib/
 /obj/
-FileTimeFixer
+cpp/build/
 
-# CMake 生成的文件
+# Executable (when at repo root)
+FileTimeFixer
+*.exe
+
+# CMake
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
+compile_commands.json
+*.cmake
+!CMakeLists.txt
 
-# Visual Studio 生成的文件
+# Visual Studio / MSVC
 *.sln
-*.vcxproj*
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
 *.user
-*.filters
+.vs/
+x64/
+[Dd]ebug/
+[Rr]elease/
+*.tlog
+*.recipe
+*.lastbuildstate
+*.idb
+*.pdb
+*.ilk
+*.exp
+*.lib
+vcpkg_installed/
 
-# MacOS 生成的文件
+# macOS
 .DS_Store
 
-# 临时文件
+# Temporary / editor
 *.swp
+*~
 *.tmp
 *.bak
+*.orig
+
+# Logs (program-generated and build)
 *.log
 
-# 忽略所有隐藏文件
+# Python (if present)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+.eggs/
+
+# Optional: uncomment to ignore all hidden files
 # .*
