@@ -2,6 +2,7 @@
 
 from .similarity import (
     LEVEL_DEFAULTS,
+    default_threads,
     find_similar_groups,
     find_similar_pairs_with_scores,
     compare_dirs,
@@ -20,4 +21,5 @@ __all__ = [
     "pairs_to_groups",
     "get_files_to_delete_from_groups",
     "LEVEL_DEFAULTS",
+    "default_threads",
 ]

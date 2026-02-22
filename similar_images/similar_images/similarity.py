@@ -1,5 +1,9 @@
 """Perceptual hash based similarity with level-based thresholds."""
 
+import os
+import re
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterator
@@ -25,6 +29,11 @@ LEVEL_DEFAULTS = {
 
 # Default pHash bit length (16*16) for converting Hamming distance to similarity [0,1]
 HASH_BITS = 256
+
+
+def default_threads() -> int:
+    """Suggested number of threads when user does not set --threads (based on CPU count)."""
+    return min(32, os.cpu_count() or 4)
 
 
 def _is_image(path: Path) -> bool:
@@ -53,6 +62,35 @@ def _collect_image_paths(root: Path, recursive: bool = True) -> list[Path]:
     if recursive:
         return [p for p in root.rglob("*") if p.is_file() and _is_image(p)]
     return [p for p in root.iterdir() if p.is_file() and _is_image(p)]
+
+
+# Filename timestamp patterns: YYYYMMDD_HHMMSS or YYYYMMDD (e.g. IMG_20250222_143052.jpg, 20220115.jpg)
+_FNAME_DATETIME = re.compile(r"(\d{8})_(\d{6})")
+_FNAME_DATE = re.compile(r"(\d{8})")
+
+
+def parse_datetime_from_filename(path: Path) -> datetime | None:
+    """
+    Parse datetime from filename (stem). Tries YYYYMMDD_HHMMSS then YYYYMMDD.
+    Returns datetime (time 00:00:00 when only date) or None.
+    """
+    stem = path.stem
+    m = _FNAME_DATETIME.search(stem)
+    if m:
+        y, mo, d = int(m.group(1)[:4]), int(m.group(1)[4:6]), int(m.group(1)[6:8])
+        h, mi, s = int(m.group(2)[:2]), int(m.group(2)[2:4]), int(m.group(2)[4:6])
+        try:
+            return datetime(y, mo, d, h, mi, s)
+        except ValueError:
+            pass
+    m = _FNAME_DATE.search(stem)
+    if m:
+        y, mo, d = int(m.group(1)[:4]), int(m.group(1)[4:6]), int(m.group(1)[6:8])
+        try:
+            return datetime(y, mo, d, 0, 0, 0)
+        except ValueError:
+            pass
+    return None
 
 
 def find_similar_groups(
@@ -129,40 +167,201 @@ def find_similar_pairs_with_scores(
     threshold: int | None = None,
     recursive: bool = True,
     progress_callback: ProgressCallback | None = None,
+    fast_same_folder_only: bool = False,
+    time_window_seconds: int | None = None,
+    num_threads: int | None = None,
 ) -> list[tuple[Path, Path, float]]:
     """
     Single directory: return all similar pairs with similarity score.
     Returns [(path_a, path_b, similarity), ...], similarity in [0, 1].
     progress_callback(phase, current, total, detail, result=None): in "compare" phase result is similarity.
+    fast_same_folder_only: when recursive, only compare images in the same subfolder (no cross-folder pairs).
+    time_window_seconds: only compare two images if filename-derived timestamps are within this many seconds (None = no filter). When fast_same_folder_only is True, caller typically passes 1 if user did not set --time-window (default 1s for --fast).
+    num_threads: when >1, use threads (--fast: one task per subdir; else: parallel hash + parallel compare by pair chunks). None = use default_threads().
     """
     paths = _collect_image_paths(root, recursive=recursive)
     if len(paths) < 2:
         return []
     ham = threshold if threshold is not None else LEVEL_DEFAULTS.get(level, LEVEL_DEFAULTS[2])
-    hashes: dict[Path, imagehash.ImageHash] = {}
+    threads = num_threads if num_threads is not None else default_threads()
+
+    def _should_compare_by_time(p1: Path, p2: Path) -> bool:
+        if time_window_seconds is None:
+            return True
+        t1, t2 = parse_datetime_from_filename(p1), parse_datetime_from_filename(p2)
+        if t1 is None or t2 is None:
+            return True  # compare when timestamp unknown
+        return abs((t1 - t2).total_seconds()) <= time_window_seconds
+
+    if fast_same_folder_only and recursive:
+        by_dir: dict[Path, list[Path]] = {}
+        for p in paths:
+            by_dir.setdefault(p.parent, []).append(p)
+        total_hash = len(paths)
+        total_pairs = 0
+        for group in by_dir.values():
+            n = len(group)
+            total_pairs += max(0, n * (n - 1) // 2)
+
+        if threads <= 1:
+            # Single-threaded fast path (original)
+            hash_idx = 0
+            all_hashes = {}
+            for _dir, group in sorted(by_dir.items(), key=lambda x: str(x[0])):
+                for p in group:
+                    if progress_callback:
+                        progress_callback("hash", hash_idx, total_hash, p)
+                    hash_idx += 1
+                    h = _compute_phash(p)
+                    if h is not None:
+                        all_hashes[p] = h
+            total_pairs = 0
+            for g in by_dir.values():
+                cnt = sum(1 for p in g if p in all_hashes)
+                total_pairs += max(0, cnt * (cnt - 1) // 2)
+            result = []
+            pair_idx = 0
+            for _dir, group in sorted(by_dir.items(), key=lambda x: str(x[0])):
+                items = [(p, all_hashes[p]) for p in group if p in all_hashes]
+                for i in range(len(items)):
+                    for j in range(i + 1, len(items)):
+                        p1, h1 = items[i]
+                        p2, h2 = items[j]
+                        if not _should_compare_by_time(p1, p2):
+                            continue
+                        d = h1 - h2
+                        sim = similarity_score(h1, h2)
+                        if progress_callback and total_pairs > 0:
+                            progress_callback("compare", pair_idx, total_pairs, (p1, p2), sim)
+                        pair_idx += 1
+                        if d <= ham:
+                            result.append((p1, p2, sim))
+            return result
+
+        # Multithreaded by subdirectory
+        lock = threading.Lock()
+        hash_done: list[int] = [0]
+        pair_done: list[int] = [0]
+
+        def process_one_folder(args: tuple[Path, list[Path]]) -> list[tuple[Path, Path, float]]:
+            _dir, group = args
+            local_hashes: dict[Path, imagehash.ImageHash] = {}
+            for p in group:
+                h = _compute_phash(p)
+                if h is not None:
+                    local_hashes[p] = h
+                if progress_callback:
+                    with lock:
+                        hash_done[0] += 1
+                        progress_callback("hash", hash_done[0] - 1, total_hash, p)
+            items = list(local_hashes.items())
+            local_result: list[tuple[Path, Path, float]] = []
+            for i in range(len(items)):
+                for j in range(i + 1, len(items)):
+                    p1, h1 = items[i]
+                    p2, h2 = items[j]
+                    if not _should_compare_by_time(p1, p2):
+                        continue
+                    d = h1 - h2
+                    sim = similarity_score(h1, h2)
+                    if progress_callback and total_pairs > 0:
+                        with lock:
+                            pair_done[0] += 1
+                            progress_callback("compare", pair_done[0] - 1, total_pairs, (p1, p2), sim)
+                    if d <= ham:
+                        local_result.append((p1, p2, sim))
+            return local_result
+
+        result = []
+        with ThreadPoolExecutor(max_workers=threads) as executor:
+            tasks = sorted(by_dir.items(), key=lambda x: str(x[0]))
+            for future in as_completed(executor.submit(process_one_folder, (d, g)) for d, g in tasks):
+                result.extend(future.result())
+        return result
+
+    # Non-fast: flat list, compare all pairs (with optional time window)
+    if threads <= 1:
+        hashes: dict[Path, imagehash.ImageHash] = {}
+        total_hash = len(paths)
+        for i, p in enumerate(paths):
+            if progress_callback:
+                progress_callback("hash", i, total_hash, p)
+            h = _compute_phash(p)
+            if h is not None:
+                hashes[p] = h
+        items = list(hashes.items())
+        n = len(items)
+        total_pairs = n * (n - 1) // 2 if n >= 2 else 0
+        result = []
+        pair_idx = 0
+        for i in range(len(items)):
+            for j in range(i + 1, len(items)):
+                p1, h1 = items[i]
+                p2, h2 = items[j]
+                if not _should_compare_by_time(p1, p2):
+                    continue
+                d = h1 - h2
+                sim = similarity_score(h1, h2)
+                if progress_callback and total_pairs > 0:
+                    progress_callback("compare", pair_idx, total_pairs, (p1, p2), sim)
+                pair_idx += 1
+                if d <= ham:
+                    result.append((p1, p2, sim))
+        return result
+
+    # Multithreaded non-fast: parallel hash by file, then parallel compare by pair chunks
     total_hash = len(paths)
-    for i, p in enumerate(paths):
-        if progress_callback:
-            progress_callback("hash", i, total_hash, p)
+    hash_done: list[int] = [0]
+    lock = threading.Lock()
+
+    def hash_one(p: Path) -> tuple[Path, imagehash.ImageHash | None]:
         h = _compute_phash(p)
-        if h is not None:
-            hashes[p] = h
+        if progress_callback:
+            with lock:
+                hash_done[0] += 1
+                progress_callback("hash", hash_done[0] - 1, total_hash, p)
+        return (p, h)
+
+    hashes = {}
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        for p, h in executor.map(hash_one, paths):
+            if h is not None:
+                hashes[p] = h
     items = list(hashes.items())
     n = len(items)
     total_pairs = n * (n - 1) // 2 if n >= 2 else 0
-    result: list[tuple[Path, Path, float]] = []
-    pair_idx = 0
-    for i in range(len(items)):
-        for j in range(i + 1, len(items)):
-            p1, h1 = items[i]
-            p2, h2 = items[j]
+    pair_indices: list[tuple[int, int]] = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            pair_indices.append((i, j))
+
+    def compare_chunk(indices: list[tuple[int, int]]) -> list[tuple[Path, Path, float]]:
+        chunk_result: list[tuple[Path, Path, float]] = []
+        for idx, (ii, jj) in enumerate(indices):
+            p1, h1 = items[ii]
+            p2, h2 = items[jj]
+            if not _should_compare_by_time(p1, p2):
+                continue
             d = h1 - h2
             sim = similarity_score(h1, h2)
             if progress_callback and total_pairs > 0:
-                progress_callback("compare", pair_idx, total_pairs, (p1, p2), sim)
-            pair_idx += 1
+                with lock:
+                    pair_done[0] += 1
+                    progress_callback("compare", pair_done[0] - 1, total_pairs, (p1, p2), sim)
             if d <= ham:
-                result.append((p1, p2, sim))
+                chunk_result.append((p1, p2, sim))
+        return chunk_result
+
+    pair_done = [0]
+    chunk_size = max(1, (len(pair_indices) + threads - 1) // threads)
+    chunks = [
+        pair_indices[k : k + chunk_size]
+        for k in range(0, len(pair_indices), chunk_size)
+    ]
+    result = []
+    with ThreadPoolExecutor(max_workers=threads) as executor:
+        for future in as_completed(executor.submit(compare_chunk, c) for c in chunks):
+            result.extend(future.result())
     return result
 
 

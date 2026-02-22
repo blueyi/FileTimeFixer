@@ -16,6 +16,7 @@ from .similarity import (
     pairs_to_groups,
     get_files_to_delete_from_groups,
     LEVEL_DEFAULTS,
+    default_threads,
 )
 
 
@@ -187,6 +188,25 @@ def main() -> int:
         default=None,
         metavar="FILE",
         help="With -r: also write comparison status (current pair) to this log file",
+    )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Single-dir only: when recursive, compare only within the same subfolder (faster); use with --time-window to limit by filename timestamp",
+    )
+    parser.add_argument(
+        "--time-window",
+        type=int,
+        default=None,
+        metavar="SECS",
+        help="Single-dir only: only compare two images if filename timestamps (YYYYMMDD_HHMMSS) are within SECS seconds. With --fast, default is 1 if not set (e.g. 3600 = 1 hour, 86400 = same day)",
+    )
+    parser.add_argument(
+        "--threads",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Single-dir only: number of threads. With --fast: one task per subfolder; else: parallel hash by file and parallel compare. Default: auto from CPU count",
     )
     args = parser.parse_args()
 
@@ -389,14 +409,27 @@ def main() -> int:
     if len(paths) == 1 and paths[0].is_dir():
         root = paths[0]
         recursive = not args.no_recursive
+        # When --fast without --time-window: default to 1 second (only compare files with filename timestamps within 1s)
+        time_window = args.time_window
+        if args.fast and recursive and time_window is None:
+            time_window = 1
+        effective_threads = args.threads if args.threads is not None else default_threads()
         if not args.json:
-            print(f"Scanning directory {'recursively' if recursive else '(current dir only)'}: {root}\n", flush=True)
+            mode = "recursively (fast: same folder only)" if (recursive and args.fast) else "recursively" if recursive else "(current dir only)"
+            if time_window is not None:
+                mode += f", time-window={time_window}s"
+            if effective_threads > 1:
+                mode += f", threads={effective_threads}"
+            print(f"Scanning directory {mode}: {root}\n", flush=True)
         pairs = find_similar_pairs_with_scores(
             root,
             level=args.level,
             threshold=args.threshold,
             recursive=recursive,
             progress_callback=progress_cb,
+            fast_same_folder_only=args.fast and recursive,
+            time_window_seconds=time_window,
+            num_threads=args.threads,
         )
         if args.copy_similar and pairs:
             unique = set()
@@ -408,7 +441,7 @@ def main() -> int:
         # 100% similar treated as duplicates (only these enter duplicate-delete flow)
         duplicate_pairs = [(p1, p2, s) for (p1, p2, s) in pairs if s == 1.0]
         dup_groups = pairs_to_groups(duplicate_pairs) if duplicate_pairs else []
-        dup_to_delete = get_files_to_delete_from_groups(dup_groups, "newer") if dup_groups else []
+        dup_to_delete = get_files_to_delete_from_groups(dup_groups, "older") if dup_groups else []
 
         if args.dedupe and pairs:
             groups = pairs_to_groups(pairs)
@@ -457,7 +490,7 @@ def main() -> int:
         print(f"Total similar pairs: {len(pairs)}")
         print(f"Duplicate (100% similar): {len(duplicate_pairs)} pair(s) in {len(dup_groups)} group(s)")
         if dup_to_delete:
-            print(f"  -> {len(dup_to_delete)} file(s) can be removed (keeps newest EXIF per group).")
+            print(f"  -> {len(dup_to_delete)} file(s) can be removed (keeps oldest EXIF per group).")
             if not args.yes:
                 try:
                     r = input("Delete duplicate images? [y/N]: ").strip().lower()

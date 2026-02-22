@@ -23,7 +23,7 @@ similar_images/
 
 ## Features
 
-1. **Single directory**: **Recursively** scan and output similar pairs with similarity and paths. Pairs with **100% similarity** are treated as **duplicates**; summary counts them and prompts whether to delete (only 100% duplicates are eligible; one kept per group by newest EXIF).
+1. **Single directory**: **Recursively** scan and output similar pairs with similarity and paths. Pairs with **100% similarity** are treated as **duplicates**; summary counts them and prompts whether to delete (only 100% duplicates are eligible; one kept per group by oldest EXIF).
 2. **Two directories**: Compare two directories at the given level and output **file paths** (and similarity) of similar images between them.
 3. **Two images**: Output the **similarity** of two given images.
 
@@ -39,7 +39,7 @@ pip install -r requirements.txt
 
 ### 1. Single directory: recursive scan, similar pairs and duplicate prompt
 
-By default **recursively** scan the directory and subdirectories; output each pair’s similarity and paths. Pairs with **100% similarity** are marked `[duplicate]`. At the end a **summary** is printed (similar count, duplicate count/groups) and you are **asked whether to delete duplicates** (only 100% pairs enter this flow; newest EXIF kept per group). Use **`--yes`** to delete without prompting.
+By default **recursively** scan the directory and subdirectories; output each pair’s similarity and paths. Pairs with **100% similarity** are marked `[duplicate]`. At the end a **summary** is printed (similar count, duplicate count/groups) and you are **asked whether to delete duplicates** (only 100% pairs enter this flow; oldest EXIF kept per group). Use **`--yes`** to delete without prompting.
 
 ```bash
 # Leave a space between path and options, e.g. "F:\Photos\DCIM" --verbose
@@ -56,6 +56,42 @@ python -m similar_images.cli --verbose <directory>
 python -m similar_images.cli -v <directory>
 # Delete duplicates without prompt
 python -m similar_images.cli --yes <directory>
+```
+
+#### Fast compare (same folder + optional time window)
+
+When photos/videos are renamed with timestamps (e.g. `IMG_YYYYMMDD_HHMMSS.ext`), use **`--fast`** to speed up recursive scans:
+
+- **`--fast`** (no `--time-window`): When recursing, **only compare images inside the same subfolder** (no cross-folder pairs). By default only pairs whose **filename timestamps are within 1 second** are compared (e.g. burst shots with same second). So with `--fast` alone you get: same folder only + 1s time window.
+- **`--time-window SECS`**: Override the time window (default with `--fast` is 1). Only compare two images if **filename-derived timestamps** are within `SECS` seconds (e.g. `86400` = same day, `3600` = 1 hour). Timestamps are parsed from patterns like `YYYYMMDD_HHMMSS` or `YYYYMMDD` in the filename. If either file has no parseable timestamp, the pair is still compared.
+
+```bash
+# Same-folder only (faster recursive scan)
+python -m similar_images.cli --fast <directory>
+
+# Same folder + only compare images within 1 hour (by filename time)
+python -m similar_images.cli --fast --time-window 3600 <directory>
+
+# Same folder + only same day (by filename time)
+python -m similar_images.cli --fast --time-window 86400 <directory>
+```
+
+#### Threading (`--threads`)
+
+Single-dir mode supports multi-threading to speed up hashing and comparison:
+
+- **With `--fast`**: one task per **subfolder** (each folder is processed in a worker; parallelism is by directory).
+- **Without `--fast`**: hashing is parallel by **file**, then pair comparison is parallel by **chunk** of pairs.
+
+Use **`--threads N`** to set the number of threads. If omitted, a default is chosen from the CPU count (capped at 32). Example:
+
+```bash
+# Auto threads (from CPU count)
+python -m similar_images.cli <directory>
+
+# Explicit thread count
+python -m similar_images.cli --threads 8 <directory>
+python -m similar_images.cli --fast --threads 4 <directory>
 ```
 
 ### 2. Two directories: compare and output paths
@@ -102,7 +138,7 @@ Only in single-dir or two-dir mode; not in two-image mode.
 
 ## Duplicates (100% similar) and delete prompt
 
-After a single-dir scan, the program counts pairs with **100% similarity** (duplicates) and prints “Duplicate (100% similar): N pair(s) in G group(s)” in the summary, then **asks whether to delete duplicates**. Only 100% identical images enter this flow; **newest EXIF** is kept per group, the rest are listed for deletion. Answer `y` to delete; use **`--yes`** to skip the prompt and delete.
+After a single-dir scan, the program counts pairs with **100% similarity** (duplicates) and prints “Duplicate (100% similar): N pair(s) in G group(s)” in the summary, then **asks whether to delete duplicates**. Only 100% identical images enter this flow; **oldest EXIF** is kept per group, the rest are listed for deletion. Answer `y` to delete; use **`--yes`** to skip the prompt and delete.
 
 ---
 
@@ -110,14 +146,14 @@ After a single-dir scan, the program counts pairs with **100% similarity** (dupl
 
 Use **`--dedupe`** to keep one image per similar group by EXIF time and delete the rest (applies to **all similar pairs at current level**, not only 100%):
 
+- **`--dedupe keep-older`** (default): Keep the image with **oldest** EXIF time; delete the others.
 - **`--dedupe keep-newer`**: Keep the image with **newest** EXIF time; delete the others (older or no EXIF).
-- **`--dedupe keep-older`**: Keep the image with **oldest** EXIF time; delete the others.
 
 Images without EXIF are treated as “oldest”. Default is to ask for confirmation; **`--yes`** / **`-y`** skips the prompt.
 
 ```bash
-python -m similar_images.cli --dedupe keep-newer <directory>
 python -m similar_images.cli --dedupe keep-older -y <directory>
+python -m similar_images.cli --dedupe keep-newer <directory>
 ```
 
 ---
