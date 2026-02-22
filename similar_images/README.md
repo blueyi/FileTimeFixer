@@ -1,165 +1,165 @@
-# 相似图片识别 (Similar Images)
+# Similar Images
 
-在指定目录下扫描图片，按**相似度等级**识别相似图片并输出分组结果。与 [FileTimeFixer](../README.md) 的时间修复功能解耦，可单独使用或配合使用（先找相似图再决定保留/去重，再跑时间修复）。
+Scan directories for images and detect similar ones by **similarity level**; output pairs or groups. Independent from [FileTimeFixer](../README.md) time-fix; use alone or before/after it (find similar → decide keep/delete → run time fix).
 
-设计说明与等级定义见 [docs/ImageSimilarityDesign.md](../docs/ImageSimilarityDesign.md)。
+Design and level definitions: [docs/ImageSimilarityDesign.md](../docs/ImageSimilarityDesign.md).
 
 ---
 
-## 目录结构
+## Layout
 
 ```
 similar_images/
-├── README.md           # 本文件
-├── requirements.txt    # Python 依赖
-├── pyproject.toml      # 可选，pip install -e . 安装后命令行入口
-└── similar_images/     # 包源码
+├── README.md           # This file
+├── requirements.txt    # Python dependencies
+├── pyproject.toml      # Optional: pip install -e . for CLI entry point
+└── similar_images/     # Package source
     ├── __init__.py
-    ├── similarity.py   # 感知哈希与等级阈值
-    └── cli.py         # 命令行入口
+    ├── similarity.py   # Perceptual hash and level thresholds
+    └── cli.py          # CLI entry
 ```
 
 ---
 
-## 功能概览
+## Features
 
-1. **单目录**：**递归**扫描目录下所有图片，输出相似图片对及相似度、路径。**相似度 100%** 的视为**重复图片**，在总结中统计并提示是否删除（仅 100% 重复可被删除，每组保留 EXIF 最新的一张）。
-2. **双目录**：给定两个目录，在指定等级下对比，输出两目录间相似图片的**文件路径**（及相似度）。
-3. **两图**：给定两张图片，输出这两张图片的**相似度**。
+1. **Single directory**: **Recursively** scan and output similar pairs with similarity and paths. Pairs with **100% similarity** are treated as **duplicates**; summary counts them and prompts whether to delete (only 100% duplicates are eligible; one kept per group by newest EXIF).
+2. **Two directories**: Compare two directories at the given level and output **file paths** (and similarity) of similar images between them.
+3. **Two images**: Output the **similarity** of two given images.
 
 ---
 
-## 安装与运行
+## Install and run
 
 ```bash
 cd similar_images
 pip install -r requirements.txt
-# 可选：pip install -e .  之后可直接用 find-similar 命令
+# Optional: pip install -e . then use find-similar command
 ```
 
-### 1. 单目录：递归扫描、输出相似图片及重复提示
+### 1. Single directory: recursive scan, similar pairs and duplicate prompt
 
-默认**递归**搜索该目录及子目录下所有图片；输出每对相似度及路径，**相似度 100%** 的会标记为 `[duplicate]`。结束时会输出**总结**（相似对数、重复对数/组数），并**询问是否删除重复图片**（仅 100% 相同的会进入删除流程，每组保留 EXIF 时间最新的一张）。加 **`--yes`** 则直接删除不询问。
+By default **recursively** scan the directory and subdirectories; output each pair’s similarity and paths. Pairs with **100% similarity** are marked `[duplicate]`. At the end a **summary** is printed (similar count, duplicate count/groups) and you are **asked whether to delete duplicates** (only 100% pairs enter this flow; newest EXIF kept per group). Use **`--yes`** to delete without prompting.
 
 ```bash
-# 目录路径与选项之间要有空格，例如 "F:\Photos\DCIM" --verbose
-python -m similar_images.cli <目录路径>
-# 不递归子目录（仅当前目录）
-python -m similar_images.cli --no-recursive <目录路径>
-# 指定等级与阈值
-python -m similar_images.cli --level 1 <目录路径>
-python -m similar_images.cli --level 2 --threshold 12 <目录路径>
-# 输出 JSON（含 results、summary 及 duplicate 统计）
-python -m similar_images.cli --json <目录路径>
-# 显示进度条、百分比及当前正在比较的图片
-python -m similar_images.cli --verbose <目录路径>
-python -m similar_images.cli -v <目录路径>
-# 删除重复图片且不询问
-python -m similar_images.cli --yes <目录路径>
+# Leave a space between path and options, e.g. "F:\Photos\DCIM" --verbose
+python -m similar_images.cli <directory>
+# Do not recurse (current directory only)
+python -m similar_images.cli --no-recursive <directory>
+# Level and threshold
+python -m similar_images.cli --level 1 <directory>
+python -m similar_images.cli --level 2 --threshold 12 <directory>
+# JSON (results, summary, duplicate stats)
+python -m similar_images.cli --json <directory>
+# Progress bar and current files
+python -m similar_images.cli --verbose <directory>
+python -m similar_images.cli -v <directory>
+# Delete duplicates without prompt
+python -m similar_images.cli --yes <directory>
 ```
 
-### 2. 双目录：对比两目录下相似图片，输出路径
+### 2. Two directories: compare and output paths
 
 ```bash
-python -m similar_images.cli <目录1> <目录2>
-python -m similar_images.cli --level 2 <目录1> <目录2>
-python -m similar_images.cli --json <目录1> <目录2>
-# 显示进度条与当前比较的文件
-python -m similar_images.cli --verbose <目录1> <目录2>
+python -m similar_images.cli <dir1> <dir2>
+python -m similar_images.cli --level 2 <dir1> <dir2>
+python -m similar_images.cli --json <dir1> <dir2>
+# Progress
+python -m similar_images.cli --verbose <dir1> <dir2>
 ```
 
-### 3. 两图：输出两张图片的相似度
+### 3. Two images: output similarity
 
 ```bash
-python -m similar_images.cli <图片1> <图片2>
-python -m similar_images.cli --json <图片1> <图片2>
+python -m similar_images.cli <image1> <image2>
+python -m similar_images.cli --json <image1> <image2>
 ```
 
-若已 `pip install -e .`，可直接使用 `find-similar` 命令，参数同上（1 个目录 / 2 个目录 / 2 个图片）。
+After `pip install -e .` you can use the `find-similar` command with the same arguments (1 dir / 2 dirs / 2 images).
 
 ---
 
-## 相似度等级
+## Similarity levels
 
-| 等级 | 名称   | 说明 |
-|------|--------|------|
-| 1    | 严格   | 几乎同一张图（压缩、小幅缩放） |
-| 2    | 中等   | 同一张图的不同尺寸/裁剪/调色 |
-| 3    | 宽松   | 同场景不同构图（当前为放宽的哈希，后续可接特征匹配） |
-
----
-
-## 进度与日志（目录模式）
-
-使用 `--verbose` / `-v` 时：
-
-- **进度条**：先显示「Hashing」阶段（计算每张图的感知哈希），再显示「Comparing」阶段（两两比较），带百分比。
-- **当前文件**：进度条右侧显示当前正在处理的图片文件名；比较阶段显示当前一对文件名。
-
-仅在选择单目录或双目录时生效，两图模式无进度条。
+| Level | Name    | Description |
+|-------|---------|-------------|
+| 1     | Strict  | Nearly the same image (compression, slight resize) |
+| 2     | Medium  | Same image, different size/crop/edits |
+| 3     | Loose   | Same scene, different framing (currently looser hash; feature matching later) |
 
 ---
 
-## 重复图片（100% 相似）与删除提示
+## Progress and log (directory mode)
 
-单目录扫描结束后，程序会统计**相似度 100%** 的图片对（视为重复），在总结中输出「Duplicate (100% similar): N pair(s) in G group(s)」，并**询问是否删除重复图片**。只有 100% 相同的图片才会进入此删除流程；每组重复图中会保留 **EXIF 时间最新** 的一张，其余列入可删除列表。回答 `y` 后执行删除；加 **`--yes`** 则不等询问直接删除。
+With **`--verbose`** / **`-v`**:
+
+- **Progress bar**: “Hashing” phase then “Comparing” phase with percentage.
+- **Current file**: Progress bar shows current image(s) or pair.
+
+Only in single-dir or two-dir mode; not in two-image mode.
 
 ---
 
-## 按 EXIF 时间去重（仅单目录，所有相似对）
+## Duplicates (100% similar) and delete prompt
 
-当多张图片相似度很高时，可通过 `--dedupe` 按 EXIF 拍摄时间只保留一张、删除其余（针对**当前等级下所有相似对**，不仅 100%）：
+After a single-dir scan, the program counts pairs with **100% similarity** (duplicates) and prints “Duplicate (100% similar): N pair(s) in G group(s)” in the summary, then **asks whether to delete duplicates**. Only 100% identical images enter this flow; **newest EXIF** is kept per group, the rest are listed for deletion. Answer `y` to delete; use **`--yes`** to skip the prompt and delete.
 
-- **`--dedupe keep-newer`**：保留 EXIF 时间**最新**的那张，删除其余（时间更早或无 EXIF 的会被删）。
-- **`--dedupe keep-older`**：保留 EXIF 时间**最早**的那张，删除其余（时间更新的会被删）。
+---
 
-无 EXIF 的图片视为“最早”。默认会询问确认；加 **`--yes` / `-y`** 则直接执行不询问。
+## EXIF-based dedupe (single dir only; all similar pairs)
+
+Use **`--dedupe`** to keep one image per similar group by EXIF time and delete the rest (applies to **all similar pairs at current level**, not only 100%):
+
+- **`--dedupe keep-newer`**: Keep the image with **newest** EXIF time; delete the others (older or no EXIF).
+- **`--dedupe keep-older`**: Keep the image with **oldest** EXIF time; delete the others.
+
+Images without EXIF are treated as “oldest”. Default is to ask for confirmation; **`--yes`** / **`-y`** skips the prompt.
 
 ```bash
-python -m similar_images.cli --dedupe keep-newer <目录>
-python -m similar_images.cli --dedupe keep-older -y <目录>
-```
-
----
-
-## 将相似图片拷贝到当前目录
-
-使用 **`--copy-similar`** 时，会把本次识别到的所有相似图片（出现在任意相似对中的文件）拷贝到**程序当前工作目录**下的 `similar_images_<时间戳>` 目录（时间戳格式 `YYYYMMDD_HHMMSS`）。单目录与双目录模式均支持；文件名冲突时自动加 `_2`、`_3` 等。
-
-```bash
-python -m similar_images.cli --copy-similar <目录>
-python -m similar_images.cli --copy-similar <目录1> <目录2>
+python -m similar_images.cli --dedupe keep-newer <directory>
+python -m similar_images.cli --dedupe keep-older -y <directory>
 ```
 
 ---
 
-## 从文件读取比较对（-r）
+## Copy similar images to current directory
 
-使用 **`-r` / `--read-from-file`** 指定一个文本文件，文件中每行写两个图片路径，用 **`, `**（逗号+空格）分隔，程序会逐对比较并输出相似度。
-
-- 空行和以 `#` 开头的行会忽略。
-- 比较过程中会向**标准输出**滚动打印当前正在比较的两个文件路径（`[序号/总数] Comparing: path1 <-> path2`），便于观察进度；最终比较结果再统一输出。使用 **`--log-file <文件>`** 时，相同内容会同时追加写入该日志文件。
-- 比较结果会按行输出；可用 **`--level`** 控制“相似”的阈值，输出中会标记 `[similar]`。
-- 比较结束后会输出**总结**：总比较对数、相似对数；若执行了删除则还会输出删除的文件数。使用 `--log-file` 时总结也会写入日志。使用 `--json` 时输出为 `{"results": [...], "summary": {"total_compared", "similar_count", "deleted_count"}}`。
-
-**`--keep-in-line first` / `--keep-in-line second`**：对于被判定为相似的每一对，保留该行中的**前一个**或**后一个**路径对应的文件，并**删除**另一个。默认会询问确认；加 **`--yes`** 则直接删除不询问。
+With **`--copy-similar`**, all images that appear in any similar pair are copied to a directory **`similar_images_<timestamp>`** under the current working directory (timestamp `YYYYMMDD_HHMMSS`). Supported in single-dir and two-dir mode; name conflicts get `_2`, `_3`, etc.
 
 ```bash
-# 仅比较并输出结果
+python -m similar_images.cli --copy-similar <directory>
+python -m similar_images.cli --copy-similar <dir1> <dir2>
+```
+
+---
+
+## Read pairs from file (-r)
+
+Use **`-r`** / **`--read-from-file`** with a text file where each line has two image paths separated by **`, `** (comma space). The program compares each pair and outputs similarity.
+
+- Blank lines and lines starting with `#` are ignored.
+- Progress is streamed to **stdout** (`[n/total] Comparing: path1 <-> path2`). With **`--log-file <file>`**, the same lines are appended to that log.
+- Results are printed per pair; **`--level`** controls the “similar” threshold; pairs above it are marked `[similar]`.
+- A **summary** is printed at the end (total compared, similar count, deleted count if any). With `--log-file`, the summary is also written to the log. With `--json`, output is `{"results": [...], "summary": {"total_compared", "similar_count", "deleted_count"}}`.
+
+**`--keep-in-line first`** / **`--keep-in-line second`**: For each pair considered similar, **keep** the first or second path in the line and **delete** the other. Default is to ask; **`--yes`** skips the prompt.
+
+```bash
+# Compare only
 python -m similar_images.cli -r pairs.txt
 python -m similar_images.cli -r pairs.txt --level 1 --json
 
-# 相似对中保留每行前一个，删除后一个（会询问）
+# Keep first in each similar pair, delete second (will prompt)
 python -m similar_images.cli -r pairs.txt --keep-in-line first
 
-# 相似对中保留每行后一个，删除前一个，且不询问
+# Keep second, delete first, no prompt
 python -m similar_images.cli -r pairs.txt --keep-in-line second -y
 
-# 比较状态同时写入日志文件
+# Also write status to log
 python -m similar_images.cli -r pairs.txt --log-file compare.log
 ```
 
-文本文件示例（`pairs.txt`）：
+Example file (`pairs.txt`):
 
 ```
 /path/to/a.jpg, /path/to/b.jpg
@@ -168,10 +168,10 @@ C:\Photos\img1.png, C:\Photos\img2.png
 
 ---
 
-## 依赖
+## Dependencies
 
 - **Python** ≥ 3.9
-- **Pillow**：读图
-- **imagehash**：感知哈希（pHash/dHash）
-- **tqdm**：进度条（`--verbose` 时使用）
-- 等级 3 或直方图辅助可选：**opencv-python**、**numpy**（见 requirements.txt 注释）
+- **Pillow**: image I/O
+- **imagehash**: perceptual hash (pHash/dHash)
+- **tqdm**: progress bar (when using `--verbose`)
+- Optional for level 3 or histogram: **opencv-python**, **numpy** (see requirements.txt comments)

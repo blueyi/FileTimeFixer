@@ -4,26 +4,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterator
 
-# progress_callback(phase, current, total, detail, result=None)；compare 阶段 result 为相似度 float
+# progress_callback(phase, current, total, detail, result=None); in "compare" phase result is similarity float
 ProgressCallback = Callable[[str, int, int, Path | tuple[Path, Path] | None, float | None], None]
 
 import imagehash
 from PIL import Image
 
-# 支持的图片扩展名（与主项目 image_util 对齐）
+# Supported image extensions (aligned with main project image_util)
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif",
     ".webp", ".heic", ".raw",
 }
 
-# 等级默认汉明距离阈值（pHash）：1=严格 2=中等 3=宽松
+# Default Hamming distance thresholds by level (pHash): 1=strict 2=medium 3=loose
 LEVEL_DEFAULTS = {
     1: 5,
     2: 15,
     3: 25,
 }
 
-# 默认 pHash 位数（16*16），用于将汉明距离转为相似度 [0,1]
+# Default pHash bit length (16*16) for converting Hamming distance to similarity [0,1]
 HASH_BITS = 256
 
 
@@ -32,7 +32,7 @@ def _is_image(path: Path) -> bool:
 
 
 def similarity_score(h1: imagehash.ImageHash, h2: imagehash.ImageHash, bits: int = HASH_BITS) -> float:
-    """汉明距离转相似度，返回 [0, 1]，1 表示完全相同。"""
+    """Convert Hamming distance to similarity in [0, 1]; 1 means identical."""
     d = h1 - h2
     return max(0.0, 1.0 - d / bits)
 
@@ -62,13 +62,13 @@ def find_similar_groups(
     recursive: bool = True,
 ) -> list[list[Path]]:
     """
-    在 root 目录下扫描图片，按相似度等级分组相似图片。
+    Scan images under root and group by similarity level.
 
-    :param root: 扫描根目录
-    :param level: 相似度等级 1/2/3
-    :param threshold: 汉明距离阈值，若为 None 则使用等级默认值
-    :param recursive: 是否递归子目录
-    :return: 每组为相似图片路径列表（至少 2 张才成组）
+    :param root: Root directory to scan
+    :param level: Similarity level 1/2/3
+    :param threshold: Hamming distance threshold; None uses level default
+    :param recursive: Whether to recurse into subdirectories
+    :return: List of groups, each a sorted list of paths (at least 2 per group)
     """
     paths = _collect_image_paths(root, recursive=recursive)
     if len(paths) < 2:
@@ -81,7 +81,7 @@ def find_similar_groups(
         if h is not None:
             hashes[p] = h
 
-    # 并查集：把汉明距离 <= ham 的归为一组
+    # Union-find: group paths with Hamming distance <= ham
     parent: dict[Path, Path] = {p: p for p in hashes}
 
     def find(x: Path) -> Path:
@@ -102,7 +102,7 @@ def find_similar_groups(
             if h1 - h2 <= ham:
                 union(p1, p2)
 
-    # 按根归类，只保留至少 2 张的组
+    # Group by root, keep only groups with at least 2 images
     groups: dict[Path, list[Path]] = {}
     for p in hashes:
         r = find(p)
@@ -116,7 +116,7 @@ def iter_similar_pairs(
     threshold: int | None = None,
     recursive: bool = True,
 ) -> Iterator[tuple[Path, Path]]:
-    """逐对产出相似图片（同一组内两两配对只产一次）。"""
+    """Yield similar pairs (each pair from a group emitted once)."""
     for group in find_similar_groups(root, level=level, threshold=threshold, recursive=recursive):
         for i in range(len(group)):
             for j in range(i + 1, len(group)):
@@ -131,9 +131,9 @@ def find_similar_pairs_with_scores(
     progress_callback: ProgressCallback | None = None,
 ) -> list[tuple[Path, Path, float]]:
     """
-    单目录：输出所有相似图片对及相似度。
-    返回 [(path_a, path_b, similarity), ...]，similarity 为 [0, 1]。
-    progress_callback(phase, current, total, detail, result=None)：compare 阶段 result 为相似度 [0,1]。
+    Single directory: return all similar pairs with similarity score.
+    Returns [(path_a, path_b, similarity), ...], similarity in [0, 1].
+    progress_callback(phase, current, total, detail, result=None): in "compare" phase result is similarity.
     """
     paths = _collect_image_paths(root, recursive=recursive)
     if len(paths) < 2:
@@ -175,9 +175,9 @@ def compare_dirs(
     progress_callback: ProgressCallback | None = None,
 ) -> list[tuple[Path, Path, float]]:
     """
-    两目录：对比两个目录下在指定等级及以上的相似图片。
-    返回 [(path_in_dir1, path_in_dir2, similarity), ...]。
-    progress_callback 同 find_similar_pairs_with_scores（compare 阶段 result 为相似度）。
+    Two directories: compare and return similar pairs at or above the given level.
+    Returns [(path_in_dir1, path_in_dir2, similarity), ...].
+    progress_callback same as find_similar_pairs_with_scores (result = similarity in "compare" phase).
     """
     paths1 = _collect_image_paths(dir1.resolve(), recursive=recursive)
     paths2 = _collect_image_paths(dir2.resolve(), recursive=recursive)
@@ -215,8 +215,8 @@ def compare_dirs(
 
 def compare_two_images(path1: Path, path2: Path) -> tuple[float, int] | None:
     """
-    两图：计算两张图片的相似度。
-    返回 (similarity [0,1], hamming_distance)，若任一方无法读图则返回 None。
+    Two images: compute similarity.
+    Returns (similarity [0,1], hamming_distance), or None if either image cannot be read.
     """
     h1 = _compute_phash(path1)
     h2 = _compute_phash(path2)
@@ -227,7 +227,7 @@ def compare_two_images(path1: Path, path2: Path) -> tuple[float, int] | None:
 
 
 def pairs_to_groups(pairs: list[tuple[Path, Path, float]]) -> list[list[Path]]:
-    """将相似对列表合并为相似组（并查集），每组内路径去重且排序。"""
+    """Merge pair list into groups (union-find); each group is deduplicated and sorted."""
     if not pairs:
         return []
     parent: dict[Path, Path] = {}
@@ -258,10 +258,10 @@ def get_files_to_delete_from_groups(
     keep: str,
 ) -> list[Path]:
     """
-    根据 EXIF 时间决定每组保留谁、删除谁。
-    keep == "newer"：每组保留 EXIF 时间最新的一张，其余加入删除列表。
-    keep == "older"：每组保留 EXIF 时间最早的一张，其余加入删除列表。
-    无 EXIF 的视为最早（keep newer 时会被删，keep older 时保留）。
+    For each group, decide which path to keep and which to delete by EXIF time.
+    keep == "newer": keep the image with newest EXIF in each group; others go to delete list.
+    keep == "older": keep the image with oldest EXIF in each group; others go to delete list.
+    No EXIF is treated as oldest (deleted when keep newer, kept when keep older).
     """
     from .exif_utils import get_exif_datetime
 

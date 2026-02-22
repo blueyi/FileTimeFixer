@@ -24,7 +24,7 @@ def _format_similarity(s: float) -> str:
 
 
 def _make_simple_progress_callback():
-    """返回简单进度 callback：将当前正在处理的文件/对及比较出的相似度输出到标准输出并立即 flush。"""
+    """Simple progress callback: print current file(s)/pair and similarity to stdout and flush."""
 
     def callback(
         phase: str,
@@ -47,7 +47,7 @@ def _make_simple_progress_callback():
 
 
 def _make_progress_callback(verbose: bool):
-    """返回用于进度条和当前文件的 callback；verbose=False 时返回 None（由调用方改用简单 callback）。"""
+    """Progress callback with tqdm bars; when verbose=False caller uses simple callback instead."""
     if not verbose:
         return None
     hash_bar: tqdm | None = None
@@ -89,7 +89,7 @@ def _make_progress_callback(verbose: bool):
 
 
 def _copy_similar_to_cwd(unique_paths: set[Path], cwd: Path) -> Path:
-    """将路径集合中的文件拷贝到 cwd 下的 similar_images_<时间戳>，文件名冲突时加 _2、_3。返回目标目录。"""
+    """Copy files in the set to similar_images_<timestamp> under cwd; use _2, _3 on name conflict. Returns target dir."""
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = cwd / f"similar_images_{ts}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -190,11 +190,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # 目录模式：始终输出比较进度到 stdout；--verbose 时用 tqdm 进度条，否则用简单逐行输出
+    # Directory mode: always show progress on stdout; use tqdm when --verbose else simple line-by-line
     progress_cb = _make_progress_callback(args.verbose) if args.verbose else _make_simple_progress_callback()
     th = args.threshold if args.threshold is not None else LEVEL_DEFAULTS.get(args.level, 15)
 
-    # --- -r 模式：从文件读取每行 "path1, path2" 并比较 ---
+    # --- -r mode: read "path1, path2" per line from file and compare ---
     if args.read_from_file is not None:
         rpath = args.read_from_file.resolve()
         if not rpath.is_file():
@@ -337,7 +337,7 @@ def main() -> int:
         print("Error: provide 1 directory, 2 directories, or 2 image files (or use -r to read pairs from file).", file=sys.stderr)
         return 1
 
-    # --- 两图模式：2 个参数且均为文件 ---
+    # --- Two-image mode: 2 args, both files ---
     if len(paths) == 2 and paths[0].is_file() and paths[1].is_file():
         result = compare_two_images(paths[0], paths[1])
         if result is None:
@@ -352,7 +352,7 @@ def main() -> int:
             print(f"  {paths[1]}")
         return 0
 
-    # --- 两目录模式：2 个参数且均为目录 ---
+    # --- Two-directory mode: 2 args, both directories ---
     if len(paths) == 2 and paths[0].is_dir() and paths[1].is_dir():
         if args.dedupe:
             print("Error: --dedupe is only supported in single-directory mode.", file=sys.stderr)
@@ -385,7 +385,7 @@ def main() -> int:
             print()
         return 0
 
-    # --- 单目录模式：1 个参数且为目录（默认递归搜索子目录）---
+    # --- Single-directory mode: 1 arg, directory (recursive by default) ---
     if len(paths) == 1 and paths[0].is_dir():
         root = paths[0]
         recursive = not args.no_recursive
@@ -405,7 +405,7 @@ def main() -> int:
                 unique.add(p2.resolve())
             out_dir = _copy_similar_to_cwd(unique, Path.cwd())
             print(f"Copied {len(unique)} image(s) to {out_dir}")
-        # 100% 相似视为重复图片（仅重复图可被“删除重复”流程删除）
+        # 100% similar treated as duplicates (only these enter duplicate-delete flow)
         duplicate_pairs = [(p1, p2, s) for (p1, p2, s) in pairs if s == 1.0]
         dup_groups = pairs_to_groups(duplicate_pairs) if duplicate_pairs else []
         dup_to_delete = get_files_to_delete_from_groups(dup_groups, "newer") if dup_groups else []
@@ -481,7 +481,7 @@ def main() -> int:
                 print(f"Deleted {len(dup_to_delete)} duplicate file(s).")
         return 0
 
-    # 非法参数组合
+    # Invalid argument combination
     if len(paths) == 1:
         p = paths[0]
         if p.is_file():

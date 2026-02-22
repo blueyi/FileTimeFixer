@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 
-# test_spec 位于仓库根目录，相对于 python/tests/ 为 ../../test_spec
+# test_spec is at repo root; from python/tests/ it is ../../test_spec
 SPEC_DIR = Path(__file__).resolve().parent.parent.parent / "test_spec"
 
 
@@ -30,7 +30,7 @@ def target_resolver_spec():
 
 
 def test_time_parse_from_spec(time_parse_spec):
-    """文件名时间解析：与 test_spec/time_parse.yaml 一致."""
+    """Filename time parsing: aligned with test_spec/time_parse.yaml."""
     from filetimefixer.time_parse import parse_file_name_time
     cases = time_parse_spec.get("cases") or []
     for c in cases:
@@ -41,7 +41,7 @@ def test_time_parse_from_spec(time_parse_spec):
 
 
 def test_target_resolver_from_spec(target_resolver_spec):
-    """目标时间解析：与 test_spec/target_resolver.yaml 一致."""
+    """Target time resolution: aligned with test_spec/target_resolver.yaml."""
     from filetimefixer.target_time_resolver import resolve_target_time, TargetTimeScenario, scenario_name
     scenario_map = {s.value: s for s in TargetTimeScenario}
     cases = target_resolver_spec.get("cases") or []

@@ -1,9 +1,9 @@
-# 文件名时间解析规范：C++ 与 Python 实现必须与此一致
-# 用例格式: filename -> expected (空字符串表示解析失败)
-# 时间格式: "YYYY-MM-DD HH:MM:SS" 或 "YYYY-MM-DD" 或 "YYYY-MM-DD HH:MM:SS.ms"
+# Filename time parsing spec: C++ and Python must match this
+# Case format: filename -> expected (empty string = parse failure)
+# Time format: "YYYY-MM-DD HH:MM:SS" or "YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS.ms"
 
 cases:
-  # 8位日期+6位时间
+  # 8-digit date + 6-digit time
   - filename: "20160331_202334.jpg"
     expected: "2016-03-31 20:23:34"
   - filename: "IMG_20231111_193849.jpg"
@@ -22,12 +22,12 @@ cases:
   # Screenshot_YYYY-MM-DD-HH-MM-SS
   - filename: "Screenshot_2021-03-25-01-12-43-235_com.tencent.mm.jpg"
     expected: "2021-03-25 01:12:43"
-  # 纯8位日期（非 mmexport）
+  # Plain 8-digit date (not mmexport)
   - filename: "20220115-wczt.jpg"
     expected: "2022-01-15"
   - filename: "20220115.jpg"
     expected: "2022-01-15"
-  # 时间戳（10/13位，UTC 毫秒 -> 北京时区 UTC+8）
+  # Timestamps (10/13 digits, UTC ms -> UTC+8)
   - filename: "mmexport1568301595980.jpg"
     expected: "2019-09-12 23:19:55.980"
   - filename: "mmexport1602999370599.jpg"
@@ -40,7 +40,7 @@ cases:
     expected: "2018-12-01 08:43:06.659"
   - filename: "mmexport1620111487858.jpg"
     expected: "2021-05-04 14:58:07.858"
-  # 解析失败
+  # Parse failure
   - filename: "nonsense.txt"
     expected: ""
   - filename: "no_digits_here.png"

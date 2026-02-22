@@ -1,98 +1,85 @@
-# 相似图片识别能力设计
+# Similar Image Detection Design
 
-本文档描述如何为 FileTimeFixer 项目增加**相似图片识别**能力：用于在同一目录或跨目录中找出视觉上相似的图片，并可**按等级**调节相似度严格程度。
-
----
-
-## 1. 目标与使用场景
-
-- **目标**：在大量照片中识别“看起来相似”的图片（近重复、同场景不同构图、同一张图的不同尺寸/压缩等）。
-- **等级**：用户可选择相似度等级（如 严格 / 中等 / 宽松），等级越高，判定为“相似”的条件越宽松。
-- **与现有项目的关系**：作为**独立子能力**，可与现有“按时间修复/重命名”流程配合使用（例如先找出相似图再决定保留哪张、或批量去重）。
+This document describes how to add **similar image detection** to the FileTimeFixer project: find visually similar images within or across directories, with **configurable similarity levels**.
 
 ---
 
-## 2. 技术选型概览
+## 1. Goals and use cases
 
-| 技术路线 | 典型实现 | 优点 | 缺点 | 适合的相似度等级 |
-|----------|----------|------|------|------------------|
-| **感知哈希 (pHash/dHash/aHash)** | imagehash (Python), libpHash (C++) | 实现简单、速度快、无需 GPU | 对大幅裁剪/旋转敏感 | 严格 ~ 中等 |
-| **直方图比较** | OpenCV (Python/C++) | 实现简单、可做颜色相似 | 对构图/内容变化不敏感 | 可作为辅助 |
-| **局部特征 (SIFT/ORB)** | OpenCV | 抗缩放、旋转、部分遮挡 | 计算量较大，需调参 | 中等 ~ 宽松 |
-| **深度学习特征 (CNN 嵌入)** | ResNet/ViT 等 + 向量相似度 | 语义相似度最好 | 依赖模型与运行时，体积大 | 宽松、语义级 |
-
-**推荐组合（按等级）**：
-
-- **等级 1（严格）**：以**感知哈希**为主，阈值收紧 → 只认“几乎同一张图”（压缩、小幅缩放、轻微调色）。
-- **等级 2（中等）**：**感知哈希**放宽阈值 + 可选 **直方图/简单特征** → 同一张图的不同尺寸、裁剪、明显调色。
-- **等级 3（宽松）**：**局部特征匹配**（如 ORB）或 **CNN 嵌入 + 余弦相似度** → 同一场景、不同构图/角度。
+- **Goal**: Identify “visually similar” images in large photo sets (near-duplicates, same scene different framing, same image at different size/compression).
+- **Levels**: User chooses a similarity level (e.g. strict / medium / loose); higher level means looser “similar” criteria.
+- **Relation to main project**: Standalone capability; can be used before or after time-fix (e.g. find similar → decide keep/delete → run time fix).
 
 ---
 
-## 3. 相似度等级定义（可配置）
+## 2. Technology overview
 
-建议将“相似度等级”映射为**算法组合 + 阈值**，便于实现和调参：
+| Approach | Typical stack | Pros | Cons | Best level |
+|----------|----------------|------|------|------------|
+| **Perceptual hash (pHash/dHash/aHash)** | imagehash (Python), libpHash (C++) | Simple, fast, no GPU | Sensitive to crop/rotation | Strict–medium |
+| **Histogram** | OpenCV (Python/C++) | Simple, color similarity | Insensitive to composition | Auxiliary |
+| **Local features (SIFT/ORB)** | OpenCV | Scale/rotation/occlusion robust | Heavier, tuning | Medium–loose |
+| **Deep features (CNN embeddings)** | ResNet/ViT + vector similarity | Best semantic similarity | Model/runtime, size | Loose, semantic |
 
-| 等级 | 名称（示例） | 算法策略 | 典型阈值/行为 |
-|------|----------------|----------|----------------|
-| **1** | 严格 (strict) | 仅 pHash 或 dHash | 汉明距离 ≤ 5（或可配置 0–10） |
-| **2** | 中等 (medium) | pHash + 可选 aHash/直方图 | 汉明距离 ≤ 15；直方图相关系数 > 0.85 |
-| **3** | 宽松 (loose) | 局部特征匹配 或 小模型嵌入 | 匹配点数 ≥ 20 或 嵌入余弦相似度 > 0.75 |
+**Suggested mapping by level**:
 
-等级可通过命令行参数或配置文件设定，例如：
-
-- `--similarity-level 1`（严格）
-- `--similarity-level 2`（中等）
-- `--similarity-level 3`（宽松）
-- 可选：`--similarity-threshold 8` 覆盖默认汉明距离阈值（仅对使用哈希的等级生效）
+- **Level 1 (strict)**: **Perceptual hash** with tight threshold → “almost same image” (compression, slight resize, light edits).
+- **Level 2 (medium)**: **Perceptual hash** with looser threshold + optional **histogram/features** → same image, different size/crop/edits.
+- **Level 3 (loose)**: **Local feature matching** (e.g. ORB) or **CNN embedding + cosine similarity** → same scene, different framing.
 
 ---
 
-## 4. 实现路径建议
+## 3. Similarity level definition (configurable)
 
-### 4.1 Python 实现（推荐先做）
+Map “similarity level” to **algorithm + threshold**:
 
-- **位置**：在 `python/filetimefixer/` 下增加子模块，例如 `similarity/`，或单文件 `image_similarity.py`，通过 `filetimefixer` CLI 子命令或独立入口调用。
-- **依赖**：
-  - **必选**：`imagehash`（感知哈希）、`Pillow`（已有）
-  - **可选**：`opencv-python`（ORB/直方图）、`numpy`
-  - **可选（等级 3 宽松）**：`torch` + `timm` 或 `sentence-transformers` 的视觉模型（按需安装）
-- **接口**：
-  - 输入：目录列表或文件列表；相似度等级（及可选阈值）。
-  - 输出：相似组（每组内文件路径列表）或相似对列表，可输出为 JSON/文本，便于与现有批处理脚本配合。
+| Level | Name (example) | Strategy | Typical threshold |
+|-------|----------------|----------|-------------------|
+| **1** | Strict | pHash or dHash only | Hamming distance ≤ 5 (configurable 0–10) |
+| **2** | Medium | pHash + optional aHash/histogram | Hamming ≤ 15; histogram correlation > 0.85 |
+| **3** | Loose | Feature matching or small embedding model | Match count ≥ 20 or embedding cosine > 0.75 |
 
-这样可与现有 `filetimefixer` 的 Python 生态一致，且便于先用等级 1/2 验证效果，再按需引入 OpenCV/深度学习。
-
-### 4.2 C++ 实现（可选，后续）
-
-- **依赖**：OpenCV（特征 + 直方图）、可选 libpHash 或自实现简单哈希。
-- **用途**：与主程序同一二进制、无 Python 运行时，适合集成到现有 `FileTimeFixer` 可执行文件中，作为 `--find-similar` 一类子功能。
-- **等级**：在 C++ 侧用不同阈值和是否启用特征匹配来对应等级 1–3。
-
-### 4.3 与现有“时间修复”的配合
-
-- 相似图识别**不修改** EXIF/文件时间，只做“分组/列出”。
-- 典型流程：先运行“相似图分组” → 用户或脚本根据分组结果决定保留/删除/合并 → 再对保留的文件运行现有 FileTimeFixer 做时间修复与重命名。
+Level can be set via CLI or config, e.g. `--similarity-level 1|2|3`, optional `--similarity-threshold N` to override Hamming for hash-based levels.
 
 ---
 
-## 5. 所需技术小结
+## 4. Implementation path
 
-| 能力 | 技术 | 用途 |
-|------|------|------|
-| 感知哈希 | imagehash (Py) / libpHash (C++) | 等级 1–2，快速判相似 |
-| 图像解码与缩放 | Pillow (Py) / OpenCV 或 Exiv2+解码 (C++) | 统一尺寸再算哈希/特征 |
-| 直方图 | OpenCV / 自实现 | 等级 2 辅助 |
-| 局部特征 | OpenCV SIFT/ORB | 等级 3，同场景不同构图 |
-| 向量相似度 | numpy (Py) / 内积 (C++) | 等级 3 嵌入相似度 |
-| 深度学习特征 | PyTorch + 预训练 CNN (Py) | 等级 3 语义相似（可选） |
+### 4.1 Python (recommended first)
+
+- **Location**: Separate package under repo root (e.g. `similar_images/`) with its own CLI; or a submodule under `python/filetimefixer/`.
+- **Dependencies**: `imagehash`, `Pillow` (required); optional `opencv-python`, `numpy`; optional `torch`+`timm` for level 3.
+- **Interface**: Input = directory/list of files + level (and optional threshold); output = similar groups or pairs (JSON/text).
+
+### 4.2 C++ (optional later)
+
+- **Dependencies**: OpenCV (features + histogram); optional libpHash or custom hash.
+- **Use**: Same binary as FileTimeFixer; e.g. `--find-similar`; levels 1–3 via threshold and optional feature matching.
+
+### 4.3 With time-fix workflow
+
+- Similar-image step **does not** change EXIF/file times; it only groups/lists.
+- Typical flow: run similar-image tool → user/script decides keep/delete → run FileTimeFixer on kept files.
 
 ---
 
-## 6. 建议实施顺序
+## 5. Technology summary
 
-1. **阶段一**：在 Python 中实现基于 **imagehash** 的等级 1（严格）与等级 2（中等），支持 `--similarity-level` 与可选 `--similarity-threshold`，输出相似组或相似对。
-2. **阶段二**：增加 OpenCV 直方图或 ORB 作为等级 2 的补充、等级 3 的初版（基于特征匹配点数）。
-3. **阶段三**（按需）：引入小模型嵌入实现真正的“语义相似”等级 3，或在本项目 C++ 中实现基于 OpenCV + 哈希的等效逻辑，与主程序一体化发布。
+| Capability | Tech | Use |
+|------------|------|-----|
+| Perceptual hash | imagehash (Py) / libpHash (C++) | Levels 1–2, fast similarity |
+| Decode/resize | Pillow (Py) / OpenCV or Exiv2 (C++) | Normalize before hash/features |
+| Histogram | OpenCV / custom | Level 2 auxiliary |
+| Local features | OpenCV SIFT/ORB | Level 3, same scene |
+| Vector similarity | numpy (Py) / dot (C++) | Level 3 embeddings |
+| Deep features | PyTorch + CNN (Py) | Level 3 semantic (optional) |
 
-按上述方式构建，即可在现有项目中增加**可配置等级的相似图片识别**能力，并与现有时间修复流程清晰解耦、可组合使用。
+---
+
+## 6. Suggested implementation order
+
+1. **Phase 1**: Python with **imagehash** for levels 1–2, `--similarity-level` and optional `--similarity-threshold`, output groups or pairs.
+2. **Phase 2**: Add OpenCV histogram or ORB for level 2 refinement and level 3 (match count).
+3. **Phase 3** (optional): Embedding-based semantic similarity for level 3, or C++ OpenCV + hash in the main binary.
+
+This yields **configurable-level similar image detection** that stays decoupled from and composable with the time-fix workflow.

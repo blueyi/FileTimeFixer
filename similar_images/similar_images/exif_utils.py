@@ -12,8 +12,8 @@ EXIF_DATETIME_FMT = "%Y:%m:%d %H:%M:%S"
 
 def get_exif_datetime(path: Path) -> datetime | None:
     """
-    读取图片 EXIF 中的拍摄时间（优先 DateTimeOriginal）。
-    返回 datetime 或 None（无 EXIF 或解析失败）。
+    Read capture time from image EXIF (prefer DateTimeOriginal).
+    Returns datetime or None (no EXIF or parse failure).
     """
     try:
         from PIL import Image

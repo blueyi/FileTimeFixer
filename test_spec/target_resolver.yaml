@@ -1,6 +1,6 @@
-# 目标时间解析场景规范：C++ 与 Python 实现必须与此一致
-# 输入: name_time (文件名解析时间), exif_time (EXIF 转 UTC 字符串)
-# 输出: target_time, scenario
+# Target time resolution spec: C++ and Python must match this
+# Input: name_time (parsed from filename), exif_time (EXIF as UTC string)
+# Output: target_time, scenario
 
 cases:
   - name_time: ""
