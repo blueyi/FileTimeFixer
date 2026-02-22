@@ -4,6 +4,7 @@
 #include "FileTimeHelper.h"
 #include "ImageUtil.h"
 #include "TargetTimeResolver.h"
+#include "VideoMetaHelper.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -62,8 +63,8 @@ bool processSingleFile(const fs::path& filePath) {
             std::cerr << "Path does not exist or is not a regular file: " << filePath << std::endl;
             return false;
         }
-        if (!filetimefixer::isImageFile(filePath)) {
-            std::cerr << "Not an image file: " << filePath << std::endl;
+        if (!filetimefixer::isMediaFile(filePath)) {
+            std::cerr << "Not an image or video file: " << filePath << std::endl;
             return false;
         }
         std::string pathStr = filePath.string();
@@ -97,8 +98,14 @@ bool processSingleFile(const fs::path& filePath) {
 
         try {
             std::string nameTime = filetimefixer::parseFileNameTime(fileName);
-            std::string exifTimeRaw = filetimefixer::getExifTimeEarliest(pathStr);
-            std::string exifTime = filetimefixer::exifDateTimeToUTCString(exifTimeRaw);
+            std::string metaTimeRaw;
+            if (filetimefixer::isImageFile(filePath))
+                metaTimeRaw = filetimefixer::getExifTimeEarliest(pathStr);
+            else if (filetimefixer::isVideoFile(filePath))
+                metaTimeRaw = filetimefixer::getVideoCreationTimeUtc(pathStr);
+            std::string exifTime = filetimefixer::isImageFile(filePath)
+                ? filetimefixer::exifDateTimeToUTCString(metaTimeRaw)
+                : metaTimeRaw;
 
             filetimefixer::ResolveResult resolved = filetimefixer::resolveTargetTime(nameTime, exifTime);
             if (resolved.targetTime.empty()) {
@@ -116,7 +123,8 @@ bool processSingleFile(const fs::path& filePath) {
                 return false;
             }
 
-            std::string targetFileName = "IMG_" + formattedTimeStr + fileExtension;
+            bool isImage = filetimefixer::isImageFile(filePath);
+            std::string targetFileName = (isImage ? "IMG_" : "VID_") + formattedTimeStr + fileExtension;
             std::cout << fileName << " | NameTime: " << nameTime
                       << ", ExifTime: " << exifTime << ", TargetTime: " << resolved.targetTime
                       << " [" << filetimefixer::scenarioName(resolved.scenario) << "] => " << targetFileName << std::endl;
@@ -139,20 +147,38 @@ bool processSingleFile(const fs::path& filePath) {
                 std::cout << "File name already correct: " << pathStr << std::endl;
             }
 
-            bool exifOk = filetimefixer::modifyExifDataForTime(finalPath, resolved.targetTime);
+            bool exifOk = true;
+            std::string exifInfo;
+            if (isImage) {
+                exifOk = filetimefixer::modifyExifDataForTime(finalPath, resolved.targetTime);
+                exifInfo = filetimefixer::getExifTimeInfoString(finalPath);
+            } else {
+                exifOk = filetimefixer::setVideoCreationTime(finalPath, resolved.targetTime);
+                exifInfo = filetimefixer::getVideoTimeInfoString(finalPath);
+                if (exifInfo == "(no video metadata)") {
+                    std::string targetForDisplay = resolved.targetTime;
+                    if (targetForDisplay.size() >= 10 && targetForDisplay[10] == ' ')
+                        targetForDisplay[10] = 'T';
+                    exifInfo = "creation_time=" + targetForDisplay.substr(0, 19)
+                        + " (target written; read-back unavailable - ensure ffmpeg/ffprobe on PATH)";
+                }
+            }
             bool fileTimeOk = filetimefixer::setFileTimesToTargetTime(fs::path(finalPath), resolved.targetTime);
-            std::string exifInfo = filetimefixer::getExifTimeInfoString(finalPath);
-            std::cout << "  [EXIF after fix] " << exifInfo << std::endl;
+            if (isImage)
+                std::cout << "  [EXIF after fix] " << exifInfo << std::endl;
+            else
+                std::cout << "  [Video metadata after fix] " << exifInfo << std::endl;
             if (!fileTimeOk) {
                 std::cerr << "File time modification failed: " << finalPath << std::endl;
             } else {
                 success = true;
             }
             if (logFile) {
+                const char* metaLabel = isImage ? "EXIF after fix" : "Video metadata after fix";
                 logFile << "1. File: " << toUtf8ForLog(finalPath) << "\n  TargetTime: " << resolved.targetTime
                         << "  EXIF_ok: " << (exifOk ? "yes" : "no")
                         << "  FileTime_ok: " << (fileTimeOk ? "yes" : "no")
-                        << "\n  [EXIF after fix] " << toUtf8ForLog(exifInfo) << "\n";
+                        << "\n  [" << metaLabel << "] " << toUtf8ForLog(exifInfo) << "\n";
             }
         } catch (const Exiv2::Error& e) {
             std::cerr << "[Skip] Exiv2 error on " << fileName << ": " << e.what() << std::endl;
@@ -217,8 +243,8 @@ bool traverseDirectory(const fs::path& directory) {
             if (!fs::is_regular_file(entry.status())) continue;
 
             totalFileCount++;
-            if (!filetimefixer::isImageFile(entry.path())) {
-                std::cout << "Non-image file: " << entry.path() << std::endl;
+            if (!filetimefixer::isMediaFile(entry.path())) {
+                std::cout << "Non-media file: " << entry.path() << std::endl;
                 continue;
             }
 
@@ -229,9 +255,16 @@ bool traverseDirectory(const fs::path& directory) {
             logSeq++;
 
             try {
+                bool isImage = filetimefixer::isImageFile(entry.path());
                 std::string nameTime = filetimefixer::parseFileNameTime(fileName);
-                std::string exifTimeRaw = filetimefixer::getExifTimeEarliest(filePath);
-                std::string exifTime = filetimefixer::exifDateTimeToUTCString(exifTimeRaw);
+                std::string metaTimeRaw;
+                if (isImage)
+                    metaTimeRaw = filetimefixer::getExifTimeEarliest(filePath);
+                else if (filetimefixer::isVideoFile(entry.path()))
+                    metaTimeRaw = filetimefixer::getVideoCreationTimeUtc(filePath);
+                std::string exifTime = isImage
+                    ? filetimefixer::exifDateTimeToUTCString(metaTimeRaw)
+                    : metaTimeRaw;
 
                 filetimefixer::ResolveResult resolved = filetimefixer::resolveTargetTime(nameTime, exifTime);
                 if (resolved.targetTime.empty()) {
@@ -249,7 +282,7 @@ bool traverseDirectory(const fs::path& directory) {
                     continue;
                 }
 
-                std::string targetFileName = "IMG_" + formattedTimeStr + fileExtension;
+                std::string targetFileName = (isImage ? "IMG_" : "VID_") + formattedTimeStr + fileExtension;
                 std::cout << totalFileCount << ": " << fileName << " | NameTime: " << nameTime
                           << ", ExifTime: " << exifTime << ", TargetTime: " << resolved.targetTime
                           << " [" << filetimefixer::scenarioName(resolved.scenario) << "] => " << targetFileName << std::endl;
@@ -273,10 +306,27 @@ bool traverseDirectory(const fs::path& directory) {
                     std::cout << "File name already correct: " << filePath << std::endl;
                 }
 
-                bool exifOk = filetimefixer::modifyExifDataForTime(finalPath, resolved.targetTime);
+                bool exifOk = true;
+                std::string exifInfo;
+                if (isImage) {
+                    exifOk = filetimefixer::modifyExifDataForTime(finalPath, resolved.targetTime);
+                    exifInfo = filetimefixer::getExifTimeInfoString(finalPath);
+                } else {
+                    exifOk = filetimefixer::setVideoCreationTime(finalPath, resolved.targetTime);
+                    exifInfo = filetimefixer::getVideoTimeInfoString(finalPath);
+                    if (exifInfo == "(no video metadata)") {
+                        std::string targetForDisplay = resolved.targetTime;
+                        if (targetForDisplay.size() >= 10 && targetForDisplay[10] == ' ')
+                            targetForDisplay[10] = 'T';
+                        exifInfo = "creation_time=" + targetForDisplay.substr(0, 19)
+                            + " (target written; read-back unavailable - ensure ffmpeg/ffprobe on PATH)";
+                    }
+                }
                 bool fileTimeOk = filetimefixer::setFileTimesToTargetTime(fs::path(finalPath), resolved.targetTime);
-                std::string exifInfo = filetimefixer::getExifTimeInfoString(finalPath);
-                std::cout << "  [EXIF after fix] " << exifInfo << std::endl;
+                if (isImage)
+                    std::cout << "  [EXIF after fix] " << exifInfo << std::endl;
+                else
+                    std::cout << "  [Video metadata after fix] " << exifInfo << std::endl;
                 if (!fileTimeOk) {
                     std::cerr << "File time modification failed: " << finalPath << std::endl;
                     errorEntries.emplace_back(finalPath, "File time modification failed");
@@ -284,10 +334,11 @@ bool traverseDirectory(const fs::path& directory) {
                     if (renamedThisFile) successCount++; else unchangedCount++;
                 }
                 if (logFile) {
+                    const char* metaLabel = isImage ? "EXIF after fix" : "Video metadata after fix";
                     logFile << logSeq << ". File: " << toUtf8ForLog(finalPath) << "\n  TargetTime: " << resolved.targetTime
                             << "  EXIF_ok: " << (exifOk ? "yes" : "no")
                             << "  FileTime_ok: " << (fileTimeOk ? "yes" : "no")
-                            << "\n  [EXIF after fix] " << toUtf8ForLog(exifInfo) << "\n";
+                            << "\n  [" << metaLabel << "] " << toUtf8ForLog(exifInfo) << "\n";
                 }
             } catch (const Exiv2::Error& e) {
                 std::cerr << "[Skip] Exiv2 error on " << fileName << ": " << e.what() << std::endl;

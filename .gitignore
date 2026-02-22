@@ -5,6 +5,8 @@
 /lib/
 /obj/
 cpp/build/
+cpp/deps/
+cpp/vcpkg/
 
 # Executable (when at repo root)
 FileTimeFixer

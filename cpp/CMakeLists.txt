@@ -16,6 +16,7 @@ set(SOURCES
 	FileTimeHelper.cpp
 	ImageUtil.cpp
 	TargetTimeResolver.cpp
+	VideoMetaHelper.cpp
 	Main.cpp
 	Tests.cpp
 )

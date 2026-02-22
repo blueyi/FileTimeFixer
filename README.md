@@ -1,6 +1,6 @@
 # FileTimeFixer
 
-Batch-fix image **file timestamps** and **EXIF capture time** from filenames and EXIF, and rename to `IMG_YYYYMMDD_HHMMSS.ext` so photos sort by target time on **Windows, Mac, Android, iPhone**.
+Batch-fix **image** and **video** file timestamps and metadata (EXIF for images, QuickTime `creation_time` for videos) from filenames and metadata, and rename to `IMG_YYYYMMDD_HHMMSS.ext` or `VID_YYYYMMDD_HHMMSS.ext` so media sort by target time on **Windows, Mac, Android, iPhone**. Video metadata requires **ffprobe** and **ffmpeg** on PATH.
 
 ---
 
@@ -11,8 +11,12 @@ The repo provides **C++** and **Python** implementations; behaviour and output a
 ```
 FileTimeFixer/
 ├── README.md                 # This file
-├── docs/                     # Docs (e.g. platform time sources)
+├── docs/                     # Docs (e.g. platform time sources, similarity design)
 │   └── PlatformTimeSources.md
+├── similar_images/           # Similar image detection (Python, perceptual hash)
+│   ├── README.md
+│   ├── requirements.txt, pyproject.toml
+│   └── similar_images/       # Package: find_similar_groups, CLI find-similar
 ├── test_spec/                # Shared test specs (C++ and Python)
 │   ├── README.md
 │   ├── time_parse.yaml       # Filename -> parsed time
@@ -35,6 +39,7 @@ FileTimeFixer/
 
 - **cpp/**: C++ build, depends on Exiv2; single executable, EXIF for JPEG/PNG/HEIC/RAW, etc.
 - **python/**: Python, Pillow + piexif; `pip install`; good for contribution and CI.
+- **similar_images/**: Python; find similar images by perceptual hash with level 1–3; see [docs/ImageSimilarityDesign.md](docs/ImageSimilarityDesign.md).
 - **test_spec/**: YAML definitions for time parsing and target-time resolution; both implementations align with them.
 - **old_cpp/**: Legacy C++; for reference only; use **cpp/** for builds.
 
@@ -79,10 +84,11 @@ Supported filename patterns: `YYYYMMDD_HHMMSS`, 8-digit date, 10/13-digit timest
 
 ## Quick start
 
-**C++ (recommended)**
+**C++ (recommended)**  
+If Exiv2/FFmpeg are not installed, run the env init script first: **Windows** `.\cpp\init_env.ps1` | **Linux/macOS** `./cpp/init_env.sh` (or `source cpp/init_env.sh`). Then build:
 
 ```bash
-cd cpp && mkdir build && cd build && cmake .. && cmake --build .
+cd cpp && mkdir build && cd build && cmake .. && cmake --build . --config Release
 ./FileTimeFixer <directory>
 ./FileTimeFixer --test
 ```
