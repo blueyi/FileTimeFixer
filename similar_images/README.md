@@ -64,6 +64,7 @@ When photos/videos are renamed with timestamps (e.g. `IMG_YYYYMMDD_HHMMSS.ext`),
 
 - **`--fast`** (no `--time-window`): When recursing, **only compare images inside the same subfolder** (no cross-folder pairs). By default only pairs whose **filename timestamps are within 1 second** are compared (e.g. burst shots with same second). So with `--fast` alone you get: same folder only + 1s time window.
 - **`--time-window SECS`**: Override the time window (default with `--fast` is 1). Only compare two images if **filename-derived timestamps** are within `SECS` seconds (e.g. `86400` = same day, `3600` = 1 hour). Timestamps are parsed from patterns like `YYYYMMDD_HHMMSS` or `YYYYMMDD` in the filename. If either file has no parseable timestamp, the pair is still compared.
+- **`--exif-time-window SECS`** with **`--fast`**: Use **EXIF capture time** instead of filename time to limit comparisons: images in each folder are **sorted by EXIF time** (oldest first), then only pairs within `SECS` seconds are compared. This avoids O(n²) per folder and is much faster when you have many images per directory. Images without EXIF are compared only with each other (at the end of the sort).
 
 ```bash
 # Same-folder only (faster recursive scan)
@@ -71,6 +72,9 @@ python -m similar_images.cli --fast <directory>
 
 # Same folder + only compare images within 1 hour (by filename time)
 python -m similar_images.cli --fast --time-window 3600 <directory>
+
+# Same folder + EXIF time window: sort by EXIF, compare only within 60s (faster)
+python -m similar_images.cli --fast --exif-time-window 60 <directory>
 
 # Same folder + only same day (by filename time)
 python -m similar_images.cli --fast --time-window 86400 <directory>

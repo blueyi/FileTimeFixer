@@ -380,6 +380,32 @@ bool traverseDirectory(const fs::path& directory) {
     return true;
 }
 
+void printHelp() {
+    std::cout
+        << "FileTimeFixer - normalize photo/video names and times\n\n"
+        << "Usage:\n"
+        << "  FileTimeFixer                 # Use built-in default test folder\n"
+        << "  FileTimeFixer <directory>     # Recursively process images/videos under directory\n"
+        << "  FileTimeFixer <file>          # Process a single image or video file\n"
+        << "  FileTimeFixer --test          # Run internal tests and exit\n"
+        << "\n"
+        << "Options:\n"
+        << "  --help, -h, /?                Show this help and exit\n"
+        << "  --test, -t                    Run tests instead of processing files\n"
+        << "\n"
+        << "Behavior:\n"
+        << "  - Derives a target time from filename and EXIF / video metadata\n"
+        << "  - Renames media to IMG_YYYYMMDD_HHMMSS.ext or VID_YYYYMMDD_HHMMSS.ext\n"
+        << "  - Writes EXIF time (images) or QuickTime creation_time (videos)\n"
+        << "  - Sets file system timestamps to the resolved target time\n"
+        << "  - Writes a UTF-8 log file '<folder>_YYYYMMDD_HHMMSS.log' in the current directory\n"
+        << "\n"
+        << "Notes:\n"
+        << "  - When no path is given, the default test folder is:\n"
+        << "      " << kDefaultTestFolder << "\n"
+        << "  - For video metadata support, ffmpeg/ffprobe must be on PATH.\n";
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -395,9 +421,13 @@ int main(int argc, char* argv[]) {
     std::string dirToProcess;
     if (argc < 2) {
         dirToProcess = kDefaultTestFolder;
-        std::cout << "No directory given, using default test folder:\n  " << dirToProcess << "\n" << std::endl;
+        std::cout << "No path given, using default test folder:\n  " << dirToProcess << "\n" << std::endl;
     } else {
         std::string arg = argv[1];
+        if (arg == "--help" || arg == "-h" || arg == "/?") {
+            printHelp();
+            return 0;
+        }
         if (arg == "--test" || arg == "-t") {
             extern int runAllTests();
             return runAllTests();

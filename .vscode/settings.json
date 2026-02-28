@@ -70,5 +70,6 @@
         "text_encoding": "cpp",
         "thread": "cpp",
         "variant": "cpp"
-    }
+    },
+    "cmake.sourceDirectory": "E:/repos/FileTimeFixer/cpp"
 }

@@ -14,6 +14,8 @@ ProgressCallback = Callable[[str, int, int, Path | tuple[Path, Path] | None, flo
 import imagehash
 from PIL import Image
 
+from .exif_utils import get_exif_datetime
+
 # Supported image extensions (aligned with main project image_util)
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".tiff", ".tif",
@@ -93,6 +95,68 @@ def parse_datetime_from_filename(path: Path) -> datetime | None:
     return None
 
 
+def _exif_sorted_candidate_pairs(
+    group: list[Path],
+    exif_window_seconds: int,
+) -> list[tuple[Path, Path]]:
+    """
+    Sort paths by EXIF time (oldest first; no-EXIF at end). Return only pairs
+    that fall within exif_window_seconds (sliding window) AND whose file sizes
+    differ by at most 5% of the smaller one. This lets us skip hashing for
+    images that are far apart in time OR clearly different in size.
+
+    - Pairs where both have EXIF and are within the time window AND size window
+      are considered candidates.
+    - No-EXIF images are compared only with each other (all pairs in the
+      no-EXIF suffix), still respecting the 5% size tolerance.
+    """
+    if exif_window_seconds <= 0 or len(group) < 2:
+        return []
+    exif_times: dict[Path, datetime | None] = {p: get_exif_datetime(p) for p in group}
+    sizes: dict[Path, int] = {}
+    for p in group:
+        try:
+            sizes[p] = p.stat().st_size
+        except OSError:
+            sizes[p] = 0
+
+    def _size_close(p1: Path, p2: Path) -> bool:
+        s1, s2 = sizes.get(p1, 0), sizes.get(p2, 0)
+        if s1 <= 0 or s2 <= 0:
+            return True  # if size unknown, do not filter by size
+        m = min(s1, s2)
+        return abs(s1 - s2) <= m * 0.05
+    # Sort: has EXIF first by time, then no EXIF (by path for stability)
+    def _key(p: Path) -> tuple[bool, datetime, str]:
+        t = exif_times[p]
+        if t is None:
+            return (True, datetime.min, str(p))  # no-EXIF after
+        return (False, t, str(p))
+
+    sorted_paths = sorted(group, key=_key)
+    # Split into EXIF prefix and no-EXIF suffix
+    exif_prefix: list[Path] = [p for p in sorted_paths if exif_times[p] is not None]
+    no_exif_suffix: list[Path] = [p for p in sorted_paths if exif_times[p] is None]
+    pairs: list[tuple[Path, Path]] = []
+    # Sliding window over EXIF prefix
+    for i in range(len(exif_prefix)):
+        t_i = exif_times[exif_prefix[i]]
+        assert t_i is not None
+        for j in range(i + 1, len(exif_prefix)):
+            t_j = exif_times[exif_prefix[j]]
+            assert t_j is not None
+            if (t_j - t_i).total_seconds() > exif_window_seconds:
+                break
+            if _size_close(exif_prefix[i], exif_prefix[j]):
+                pairs.append((exif_prefix[i], exif_prefix[j]))
+    # All pairs among no-EXIF
+    for i in range(len(no_exif_suffix)):
+        for j in range(i + 1, len(no_exif_suffix)):
+            if _size_close(no_exif_suffix[i], no_exif_suffix[j]):
+                pairs.append((no_exif_suffix[i], no_exif_suffix[j]))
+    return pairs
+
+
 def find_similar_groups(
     root: Path,
     level: int = 2,
@@ -169,6 +233,7 @@ def find_similar_pairs_with_scores(
     progress_callback: ProgressCallback | None = None,
     fast_same_folder_only: bool = False,
     time_window_seconds: int | None = None,
+    exif_time_window_seconds: int | None = None,
     num_threads: int | None = None,
 ) -> list[tuple[Path, Path, float]]:
     """
@@ -177,6 +242,7 @@ def find_similar_pairs_with_scores(
     progress_callback(phase, current, total, detail, result=None): in "compare" phase result is similarity.
     fast_same_folder_only: when recursive, only compare images in the same subfolder (no cross-folder pairs).
     time_window_seconds: only compare two images if filename-derived timestamps are within this many seconds (None = no filter). When fast_same_folder_only is True, caller typically passes 1 if user did not set --time-window (default 1s for --fast).
+    exif_time_window_seconds: when fast_same_folder_only and this is set, images are sorted by EXIF time and only pairs within this many seconds are compared (faster than O(n^2) per folder).
     num_threads: when >1, use threads (--fast: one task per subdir; else: parallel hash + parallel compare by pair chunks). None = use default_threads().
     """
     paths = _collect_image_paths(root, recursive=recursive)
@@ -198,15 +264,20 @@ def find_similar_pairs_with_scores(
         for p in paths:
             by_dir.setdefault(p.parent, []).append(p)
         total_hash = len(paths)
-        total_pairs = 0
-        for group in by_dir.values():
-            n = len(group)
-            total_pairs += max(0, n * (n - 1) // 2)
+        # When EXIF time window is set, we only compare candidate pairs (sorted by EXIF, sliding window)
+        use_exif_window = exif_time_window_seconds is not None and exif_time_window_seconds > 0
+        dir_candidate_pairs: dict[Path, list[tuple[Path, Path]]] = {}
+        if use_exif_window:
+            for _dir, group in by_dir.items():
+                dir_candidate_pairs[_dir] = _exif_sorted_candidate_pairs(group, exif_time_window_seconds)
+            total_pairs = sum(len(cp) for cp in dir_candidate_pairs.values())
+        else:
+            total_pairs = sum(max(0, len(g) * (len(g) - 1) // 2) for g in by_dir.values())
 
         if threads <= 1:
-            # Single-threaded fast path (original)
+            # Single-threaded fast path
             hash_idx = 0
-            all_hashes = {}
+            all_hashes: dict[Path, imagehash.ImageHash] = {}
             for _dir, group in sorted(by_dir.items(), key=lambda x: str(x[0])):
                 for p in group:
                     if progress_callback:
@@ -215,19 +286,20 @@ def find_similar_pairs_with_scores(
                     h = _compute_phash(p)
                     if h is not None:
                         all_hashes[p] = h
-            total_pairs = 0
-            for g in by_dir.values():
-                cnt = sum(1 for p in g if p in all_hashes)
-                total_pairs += max(0, cnt * (cnt - 1) // 2)
+            if use_exif_window:
+                total_pairs = sum(len(cp) for cp in dir_candidate_pairs.values())
+            else:
+                total_pairs = 0
+                for g in by_dir.values():
+                    cnt = sum(1 for p in g if p in all_hashes)
+                    total_pairs += max(0, cnt * (cnt - 1) // 2)
             result = []
             pair_idx = 0
             for _dir, group in sorted(by_dir.items(), key=lambda x: str(x[0])):
-                items = [(p, all_hashes[p]) for p in group if p in all_hashes]
-                for i in range(len(items)):
-                    for j in range(i + 1, len(items)):
-                        p1, h1 = items[i]
-                        p2, h2 = items[j]
-                        if not _should_compare_by_time(p1, p2):
+                if use_exif_window:
+                    for p1, p2 in dir_candidate_pairs.get(_dir, []):
+                        h1, h2 = all_hashes.get(p1), all_hashes.get(p2)
+                        if h1 is None or h2 is None:
                             continue
                         d = h1 - h2
                         sim = similarity_score(h1, h2)
@@ -236,6 +308,21 @@ def find_similar_pairs_with_scores(
                         pair_idx += 1
                         if d <= ham:
                             result.append((p1, p2, sim))
+                else:
+                    items = [(p, all_hashes[p]) for p in group if p in all_hashes]
+                    for i in range(len(items)):
+                        for j in range(i + 1, len(items)):
+                            p1, h1 = items[i]
+                            p2, h2 = items[j]
+                            if not _should_compare_by_time(p1, p2):
+                                continue
+                            d = h1 - h2
+                            sim = similarity_score(h1, h2)
+                            if progress_callback and total_pairs > 0:
+                                progress_callback("compare", pair_idx, total_pairs, (p1, p2), sim)
+                            pair_idx += 1
+                            if d <= ham:
+                                result.append((p1, p2, sim))
             return result
 
         # Multithreaded by subdirectory
@@ -243,8 +330,12 @@ def find_similar_pairs_with_scores(
         hash_done: list[int] = [0]
         pair_done: list[int] = [0]
 
-        def process_one_folder(args: tuple[Path, list[Path]]) -> list[tuple[Path, Path, float]]:
-            _dir, group = args
+        def process_one_folder(args: tuple[Path, list[Path], list[tuple[Path, Path]] | None]) -> list[tuple[Path, Path, float]]:
+            if use_exif_window:
+                _dir, group, candidate_pairs = args  # type: ignore[misc]
+            else:
+                _dir, group = args[0], args[1]
+                candidate_pairs = None
             local_hashes: dict[Path, imagehash.ImageHash] = {}
             for p in group:
                 h = _compute_phash(p)
@@ -254,13 +345,11 @@ def find_similar_pairs_with_scores(
                     with lock:
                         hash_done[0] += 1
                         progress_callback("hash", hash_done[0] - 1, total_hash, p)
-            items = list(local_hashes.items())
             local_result: list[tuple[Path, Path, float]] = []
-            for i in range(len(items)):
-                for j in range(i + 1, len(items)):
-                    p1, h1 = items[i]
-                    p2, h2 = items[j]
-                    if not _should_compare_by_time(p1, p2):
+            if use_exif_window and candidate_pairs is not None:
+                for p1, p2 in candidate_pairs:
+                    h1, h2 = local_hashes.get(p1), local_hashes.get(p2)
+                    if h1 is None or h2 is None:
                         continue
                     d = h1 - h2
                     sim = similarity_score(h1, h2)
@@ -270,12 +359,32 @@ def find_similar_pairs_with_scores(
                             progress_callback("compare", pair_done[0] - 1, total_pairs, (p1, p2), sim)
                     if d <= ham:
                         local_result.append((p1, p2, sim))
+            else:
+                items = list(local_hashes.items())
+                for i in range(len(items)):
+                    for j in range(i + 1, len(items)):
+                        p1, h1 = items[i]
+                        p2, h2 = items[j]
+                        if not _should_compare_by_time(p1, p2):
+                            continue
+                        d = h1 - h2
+                        sim = similarity_score(h1, h2)
+                        if progress_callback and total_pairs > 0:
+                            with lock:
+                                pair_done[0] += 1
+                                progress_callback("compare", pair_done[0] - 1, total_pairs, (p1, p2), sim)
+                        if d <= ham:
+                            local_result.append((p1, p2, sim))
             return local_result
 
         result = []
+        tasks = sorted(by_dir.items(), key=lambda x: str(x[0]))
+        if use_exif_window:
+            task_args = [(d, g, dir_candidate_pairs.get(d, [])) for d, g in tasks]
+        else:
+            task_args = [(d, g, None) for d, g in tasks]
         with ThreadPoolExecutor(max_workers=threads) as executor:
-            tasks = sorted(by_dir.items(), key=lambda x: str(x[0]))
-            for future in as_completed(executor.submit(process_one_folder, (d, g)) for d, g in tasks):
+            for future in as_completed(executor.submit(process_one_folder, a) for a in task_args):
                 result.extend(future.result())
         return result
 
